@@ -1,5 +1,11 @@
 package io.github.ts3mobile.app.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,8 +29,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.rotate
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
@@ -98,7 +106,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.shape.RoundedCornerShape
 import io.github.ts3mobile.app.ConnectionFormState
 import io.github.ts3mobile.app.service.MicrophoneMode
 import io.github.ts3mobile.app.service.ParticipantAudioSettings
@@ -534,100 +541,173 @@ private fun MicrophoneControl(
     suppressionMode: SuppressionMode,
     onSuppressionModeChanged: (SuppressionMode) -> Unit,
 ) {
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        label = "chevronRotation",
+    )
+
     Surface(
-        modifier = Modifier.border(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant,
-        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            ),
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = "ÁUDIO / MICROFONE",
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                MicrophoneMode.entries.forEachIndexed { index, option ->
-                    SegmentedButton(
-                        selected = mode == option,
-                        onClick = { onMicrophoneModeChanged(option) },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = MicrophoneMode.entries.size,
-                        ),
-                    ) {
-                        Text(
-                            when (option) {
-                                MicrophoneMode.OFF -> "Desativado"
-                                MicrophoneMode.PUSH_TO_TALK -> "Segure"
-                                MicrophoneMode.CONTINUOUS -> "Sempre ligado"
-                            },
-                        )
-                    }
-                }
-            }
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    text = "Supressão de ruído",
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    SuppressionMode.entries.forEachIndexed { index, option ->
-                        SegmentedButton(
-                            selected = suppressionMode == option,
-                            onClick = { onSuppressionModeChanged(option) },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = SuppressionMode.entries.size,
-                            ),
-                        ) {
-                            Text(
-                                text = when (option) {
-                                    SuppressionMode.OFF -> "Off"
-                                    SuppressionMode.RNNOISE -> "RNNoise"
-                                    SuppressionMode.DEEPFILTER -> "DeepFilter"
-                                    SuppressionMode.NOISE_SUPPRESSOR -> "Android"
-                                    SuppressionMode.BOTH -> "Ambos"
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-                Text(
-                    text = when (suppressionMode) {
-                        SuppressionMode.OFF -> "Sem supressão"
-                        SuppressionMode.RNNOISE -> "Filtro neural RNNoise"
-                        SuppressionMode.DEEPFILTER -> "Filtro neural DeepFilterNet"
-                        SuppressionMode.NOISE_SUPPRESSOR -> "Filtro nativo Android"
-                        SuppressionMode.BOTH -> "RNNoise + Android combinados"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.semantics {
-                        contentDescription = "Modo atual: ${when (suppressionMode) {
-                            SuppressionMode.OFF -> "sem supressão"
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "ÁUDIO & MICROFONE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "• ${when (mode) {
+                            MicrophoneMode.OFF -> "Mudo"
+                            MicrophoneMode.PUSH_TO_TALK -> "PTT"
+                            MicrophoneMode.CONTINUOUS -> "Contínuo"
+                        }} | ${when (suppressionMode) {
+                            SuppressionMode.OFF -> "Sem filtro"
                             SuppressionMode.RNNOISE -> "RNNoise"
                             SuppressionMode.DEEPFILTER -> "DeepFilter"
                             SuppressionMode.NOISE_SUPPRESSOR -> "Android"
-                            SuppressionMode.BOTH -> "ambos"
-                        }}"
-                    },
-                )
+                            SuppressionMode.BOTH -> "Ambos"
+                        }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                IconButton(
+                    onClick = { isExpanded = !isExpanded },
+                    modifier = Modifier.size(24.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Recolher opções" else "Expandir opções",
+                        modifier = Modifier.rotate(chevronRotation),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Modo de transmissão",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            MicrophoneMode.entries.forEachIndexed { index, option ->
+                                SegmentedButton(
+                                    selected = mode == option,
+                                    onClick = { onMicrophoneModeChanged(option) },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = MicrophoneMode.entries.size,
+                                    ),
+                                ) {
+                                    Text(
+                                        text = when (option) {
+                                            MicrophoneMode.OFF -> "Desativado"
+                                            MicrophoneMode.PUSH_TO_TALK -> "PTT"
+                                            MicrophoneMode.CONTINUOUS -> "Contínuo"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Supressão de ruído",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            SuppressionMode.entries.forEachIndexed { index, option ->
+                                SegmentedButton(
+                                    selected = suppressionMode == option,
+                                    onClick = { onSuppressionModeChanged(option) },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = SuppressionMode.entries.size,
+                                    ),
+                                ) {
+                                    Text(
+                                        text = when (option) {
+                                            SuppressionMode.OFF -> "Off"
+                                            SuppressionMode.RNNOISE -> "RNNoise"
+                                            SuppressionMode.DEEPFILTER -> "DeepFilter"
+                                            SuppressionMode.NOISE_SUPPRESSOR -> "Android"
+                                            SuppressionMode.BOTH -> "Ambos"
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = when (suppressionMode) {
+                                SuppressionMode.OFF -> "Sem cancelamento de ruído"
+                                SuppressionMode.RNNOISE -> "Filtro neural RNNoise clássico"
+                                SuppressionMode.DEEPFILTER -> "Filtro neural profundo DeepFilterNet"
+                                SuppressionMode.NOISE_SUPPRESSOR -> "Filtro nativo do hardware Android"
+                                SuppressionMode.BOTH -> "RNNoise + Android combinados"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        thickness = 1.dp,
+                    )
+                }
             }
 
             when (mode) {
@@ -639,7 +719,7 @@ private fun MicrophoneControl(
                 MicrophoneMode.OFF,
                 MicrophoneMode.CONTINUOUS,
                 -> Row(
-                    modifier = Modifier.height(58.dp),
+                    modifier = Modifier.height(48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -660,11 +740,16 @@ private fun MicrophoneControl(
                         text = if (mode == MicrophoneMode.OFF) {
                             "Microfone desativado"
                         } else if (isTransmitting) {
-                            "Microfone sempre ligado"
+                            "Microfone transmitindo (sempre ligado)"
                         } else {
-                            "Iniciando microfone"
+                            "Microfone ativo (sempre ligado)"
                         },
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isTransmitting) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                     )
                 }
             }
