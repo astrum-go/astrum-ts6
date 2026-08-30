@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TS3 Mobile</string>
-    <string name="notification_channel_name">TeamSpeak connection</string>
-    <string name="notification_connecting">Connecting to %1$s</string>
-    <string name="notification_reconnecting">Reconnecting to %1$s</string>
-    <string name="notification_disconnecting">Disconnecting from %1$s</string>
-    <string name="notification_microphone_active">麦克风已开启 · %1$s · %2$d 人在线</string>
+    <string name="notification_channel_name">Conexão do TeamSpeak</string>
+    <string name="notification_connecting">Conectando a %1$s</string>
+    <string name="notification_reconnecting">Reconectando a %1$s</string>
+    <string name="notification_disconnecting">Desconectando de %1$s</string>
+    <string name="notification_microphone_active">Microfone ativo · %1$s · %2$d pessoas online</string>
     <plurals name="notification_connected">
-        <item quantity="one">Connected to %1$s · %2$d online</item>
-        <item quantity="other">Connected to %1$s · %2$d online</item>
+        <item quantity="one">Conectado a %1$s · %2$d pessoa online</item>
+        <item quantity="other">Conectado a %1$s · %2$d pessoas online</item>
     </plurals>
-    <string name="notification_disconnect">Disconnect</string>
+    <string name="notification_disconnect">Desconectar</string>
 </resources>

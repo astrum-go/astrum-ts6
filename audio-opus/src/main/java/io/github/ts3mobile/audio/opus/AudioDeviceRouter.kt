@@ -56,7 +56,7 @@ class AudioDeviceRouter(
         if (routes.none { it.id == routeId }) {
             publishState(
                 routes = routes,
-                error = "音频设备已不可用",
+                error = "Dispositivo de áudio indisponível",
             )
             return
         }
@@ -64,11 +64,11 @@ class AudioDeviceRouter(
         val output = outputDevice(routeId)
         val switched = runCatching { applySystemRoute(output) }
             .getOrElse { error ->
-                publishState(routes, "切换音频设备失败：${error.message ?: error.javaClass.simpleName}")
+                publishState(routes, "Falha ao trocar de dispositivo de áudio: ${error.message ?: error.javaClass.simpleName}")
                 return
             }
         if (!switched) {
-            publishState(routes, "系统拒绝切换到该音频设备")
+            publishState(routes, "O sistema recusou a troca para este dispositivo de áudio")
             return
         }
 
@@ -138,7 +138,7 @@ class AudioDeviceRouter(
         }
         publishState(
             routes = routes,
-            error = if (routeWasRemoved) "所选音频设备已断开，已切回系统自动" else null,
+            error = if (routeWasRemoved) "Dispositivo de áudio selecionado desconectado; voltando ao modo automático do sistema" else null,
         )
     }
 
@@ -257,13 +257,13 @@ class AudioDeviceRouter(
         }
 
         fun routeLabel(kind: AudioRouteKind): String = when (kind) {
-            AudioRouteKind.SYSTEM -> "系统自动"
-            AudioRouteKind.EARPIECE -> "听筒"
-            AudioRouteKind.SPEAKER -> "扬声器"
-            AudioRouteKind.WIRED -> "有线耳机"
-            AudioRouteKind.BLUETOOTH -> "蓝牙设备"
-            AudioRouteKind.USB -> "USB 音频"
-            AudioRouteKind.OTHER -> "其他设备"
+            AudioRouteKind.SYSTEM -> "Sistema (automático)"
+            AudioRouteKind.EARPIECE -> "Auricular"
+            AudioRouteKind.SPEAKER -> "Alto-falante"
+            AudioRouteKind.WIRED -> "Fone com fio"
+            AudioRouteKind.BLUETOOTH -> "Dispositivo Bluetooth"
+            AudioRouteKind.USB -> "Áudio USB"
+            AudioRouteKind.OTHER -> "Outro dispositivo"
         }
 
         fun routeOrder(kind: AudioRouteKind): Int = when (kind) {
