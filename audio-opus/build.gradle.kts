@@ -44,6 +44,7 @@ android {
 dependencies {
     implementation(project(":ts3-protocol"))
     implementation(libs.opus)
+    implementation(libs.deepfilternet)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)

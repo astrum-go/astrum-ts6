@@ -25,6 +25,7 @@ import io.github.ts3mobile.audio.opus.AudioDeviceRouter
 import io.github.ts3mobile.audio.opus.OpusAudioPlayer
 import io.github.ts3mobile.audio.opus.OpusMicrophoneCapture
 import io.github.ts3mobile.audio.opus.AudioRoutingState
+import io.github.ts3mobile.audio.opus.SuppressionMode
 import io.github.ts3mobile.protocol.ConnectionPhase
 import io.github.ts3mobile.protocol.ConnectionStatus
 import io.github.ts3mobile.protocol.ServerConfig
@@ -39,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,10 +60,13 @@ class TeamSpeakService : Service() {
     private val pushToTalkPressed = AtomicBoolean(false)
     private val mutableState = MutableStateFlow(TeamSpeakServiceState())
     private val networkAvailable = MutableStateFlow(false)
+    private val suppressionModePreferenceReady = CompletableDeferred<Unit>()
+    private val suppressionModePreferenceState = SuppressionModePreferenceState()
     private val state = mutableState.asStateFlow()
     private val binder = SessionBinder()
 
     private lateinit var identityVault: IdentityVault
+    private lateinit var audioPreferences: AudioPreferences
     private lateinit var audioPlayer: OpusAudioPlayer
     private lateinit var microphone: OpusMicrophoneCapture
     private lateinit var audioRouter: AudioDeviceRouter
@@ -112,9 +117,24 @@ class TeamSpeakService : Service() {
     override fun onCreate() {
         super.onCreate()
         identityVault = IdentityVault(applicationContext)
+        audioPreferences = AudioPreferences(applicationContext)
         audioPlayer = OpusAudioPlayer(applicationContext)
         microphone = OpusMicrophoneCapture(applicationContext, ::onMicrophoneFailure)
         audioRouter = AudioDeviceRouter(applicationContext, ::onAudioRoutingChanged)
+        serviceScope.launch {
+            val persistedValue = runCatching { audioPreferences.readSuppressionMode() }
+                .getOrElse { error ->
+                    System.err.println(
+                        "TS3_AUDIO: failed to resolve suppression mode; " +
+                            "using default: ${error.message}",
+                    )
+                    AudioPreferences.DEFAULT_SUPPRESSION_MODE
+                }
+            val mode = suppressionModePreferenceState.restore(persistedValue)
+            microphone.setSuppressionMode(mode)
+            mutableState.update { it.copy(suppressionMode = mode) }
+            suppressionModePreferenceReady.complete(Unit)
+        }
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         networkAvailable.value = hasUsableNetwork()
         connectivityManager.registerDefaultNetworkCallback(networkCallback)
@@ -179,16 +199,20 @@ class TeamSpeakService : Service() {
         val selectedPlaybackMuted = mutableState.value.playbackMuted
         audioPlayer.replaceParticipantGains(emptyMap())
         pushToTalkPressed.set(false)
-        mutableState.value = TeamSpeakServiceState(
-            status = ConnectionStatus(ConnectionPhase.CONNECTING),
-            serverLabel = "${config.host}:${config.port}",
-            microphoneMode = selectedMicrophoneMode,
-            playbackMuted = selectedPlaybackMuted,
-            audioRouting = mutableState.value.audioRouting,
-        )
+        mutableState.update { current ->
+            TeamSpeakServiceState(
+                status = ConnectionStatus(ConnectionPhase.CONNECTING),
+                serverLabel = "${config.host}:${config.port}",
+                microphoneMode = selectedMicrophoneMode,
+                suppressionMode = suppressionModePreferenceState.current(),
+                playbackMuted = selectedPlaybackMuted,
+                audioRouting = current.audioRouting,
+            )
+        }
         if (session != null) session?.close()
 
         connectionJob = serviceScope.launch {
+            suppressionModePreferenceReady.await()
             transmitMutex.withLock { stopMicrophoneLocked() }
             when (val result = performConnectionAttempt(config, epoch, reconnecting = false)) {
                 AttemptResult.Success,
@@ -259,7 +283,7 @@ class TeamSpeakService : Service() {
 
             val status = ConnectionStatus(
                 ConnectionPhase.ERROR,
-                error.conciseMessage(),
+                "Falha na conexão: ${error.conciseMessage()}",
                 retryable = error.isRetryableConnectionFailure(),
             )
             mutableState.update { current ->
@@ -267,7 +291,7 @@ class TeamSpeakService : Service() {
                     status = if (reconnecting) {
                         ConnectionStatus(
                             ConnectionPhase.RECONNECTING,
-                            "重连失败：${status.detail.orEmpty()}".trimEnd('：'),
+                            "Falha na reconexão: ${status.detail.orEmpty()}".trimEnd(':'),
                             retryable = status.retryable,
                         )
                     } else {
@@ -305,7 +329,11 @@ class TeamSpeakService : Service() {
             audioPlayer.stop()
             audioPlayer.setMuted(false)
             audioRouter.stop()
-            mutableState.value = TeamSpeakServiceState()
+            mutableState.update { current ->
+                TeamSpeakServiceState(
+                suppressionMode = suppressionModePreferenceState.current(),
+                )
+            }
             stopForeground(STOP_FOREGROUND_REMOVE)
             if (userInitiated) stopSelf()
         }
@@ -414,7 +442,7 @@ class TeamSpeakService : Service() {
     private fun launchReconnect(cause: ConnectionStatus, epoch: Long) {
         if (!isEpochActive(epoch) || userDisconnectRequested) return
         val detail = if (networkAvailable.value) {
-            "连接中断，准备自动重连：${cause.detail.orEmpty()}".trimEnd('：')
+            "Conexão interrompida; preparando reconexão automática: ${cause.detail.orEmpty()}".trimEnd(':')
         } else {
             WAITING_FOR_NETWORK_DETAIL
         }
@@ -467,7 +495,7 @@ class TeamSpeakService : Service() {
                 current.copy(
                     status = ConnectionStatus(
                         ConnectionPhase.RECONNECTING,
-                        "${delayMs / 1_000} 秒后进行第 $attempt 次重连",
+                        "Nova tentativa de conexão em ${delayMs / 1_000} s (tentativa $attempt)",
                         retryable = true,
                     ),
                 )
@@ -482,7 +510,7 @@ class TeamSpeakService : Service() {
                 current.copy(
                     status = ConnectionStatus(
                         ConnectionPhase.RECONNECTING,
-                        "正在进行第 $attempt 次重连",
+                        "Realizando a tentativa de reconexão $attempt",
                         retryable = true,
                     ),
                 )
@@ -550,8 +578,8 @@ class TeamSpeakService : Service() {
         serviceScope.launch {
             try {
                 sessionMutex.withLock {
-                    check(isListenerActive(listener) && listener.connected) { "连接已失效" }
-                    session?.joinChannel(target.id, target.password) ?: error("连接已失效")
+                    check(isListenerActive(listener) && listener.connected) { "A conexão não está mais ativa" }
+                    session?.joinChannel(target.id, target.password) ?: error("A conexão não está mais ativa")
                 }
                 mutableState.update {
                     it.copy(switchingChannelId = null, channelError = null)
@@ -561,7 +589,7 @@ class TeamSpeakService : Service() {
                     mutableState.update {
                         it.copy(
                             switchingChannelId = null,
-                            channelError = "恢复频道失败：${error.conciseMessage()}",
+                            channelError = "Falha ao restaurar o canal: ${error.conciseMessage()}",
                         )
                     }
                 }
@@ -591,7 +619,7 @@ class TeamSpeakService : Service() {
                     listener,
                     ConnectionStatus(
                         ConnectionPhase.DISCONNECTED,
-                        "网络连接已断开",
+                        "Conexão de rede perdida",
                         retryable = true,
                     ),
                 )
@@ -656,7 +684,7 @@ class TeamSpeakService : Service() {
             !hasMicrophonePermission()
         ) {
             mutableState.update {
-                it.copy(microphoneError = "需要麦克风权限才能开启常开模式")
+                it.copy(microphoneError = "É necessária permissão do microfone para ativar o modo sempre ligado")
             }
             return
         }
@@ -665,6 +693,13 @@ class TeamSpeakService : Service() {
             it.copy(microphoneMode = mode, microphoneError = null)
         }
         reconcileMicrophone()
+    }
+
+    private fun setSuppressionMode(mode: SuppressionMode) {
+        val current = suppressionModePreferenceState.request(mode)
+        microphone.setSuppressionMode(current)
+        mutableState.update { it.copy(suppressionMode = current) }
+        audioPreferences.setSuppressionMode(current)
     }
 
     private fun setPushToTalkPressed(pressed: Boolean) {
@@ -692,7 +727,7 @@ class TeamSpeakService : Service() {
                     mutableState.update {
                         it.copy(
                             isTransmitting = false,
-                            microphoneError = "没有麦克风权限",
+                            microphoneError = "Permissão do microfone não concedida",
                         )
                     }
                     return@withLock
@@ -715,7 +750,7 @@ class TeamSpeakService : Service() {
                     mutableState.update {
                         it.copy(
                             isTransmitting = false,
-                            microphoneError = error.conciseMessage(),
+                            microphoneError = "Falha ao iniciar o microfone: ${error.conciseMessage()}",
                         )
                     }
                     updateForegroundType(includeMicrophone = false)
@@ -750,7 +785,7 @@ class TeamSpeakService : Service() {
         mutableState.update {
             it.copy(
                 isTransmitting = false,
-                microphoneError = error.conciseMessage(),
+                microphoneError = "Falha no microfone: ${error.conciseMessage()}",
             )
         }
         serviceScope.launch {
@@ -904,10 +939,10 @@ class TeamSpeakService : Service() {
             try {
                 sessionMutex.withLock {
                     check(mutableState.value.status.phase == ConnectionPhase.CONNECTED) {
-                        "当前未连接到服务器"
+                        "Não conectado ao servidor"
                     }
                     session?.joinChannel(channelId, password)
-                        ?: error("当前未连接到服务器")
+                        ?: error("Não conectado ao servidor")
                 }
                 lastChannel = ChannelTarget(channelId, password)
                 mutableState.update { state ->
@@ -917,7 +952,7 @@ class TeamSpeakService : Service() {
                 mutableState.update { state ->
                     state.copy(
                         switchingChannelId = null,
-                        channelError = "切换频道失败：${error.conciseMessage()}",
+                        channelError = "Falha ao trocar de canal: ${error.conciseMessage()}",
                     )
                 }
             }
@@ -949,6 +984,10 @@ class TeamSpeakService : Service() {
             this@TeamSpeakService.setMicrophoneMode(mode)
         }
 
+        fun setSuppressionMode(mode: SuppressionMode) {
+            this@TeamSpeakService.setSuppressionMode(mode)
+        }
+
         fun setPushToTalkPressed(pressed: Boolean) {
             this@TeamSpeakService.setPushToTalkPressed(pressed)
         }
@@ -966,7 +1005,7 @@ class TeamSpeakService : Service() {
             mutableState.update {
                 it.copy(
                     isTransmitting = false,
-                    microphoneError = "需要麦克风权限才能发送语音",
+                    microphoneError = "É necessária permissão do microfone para enviar áudio",
                 )
             }
         }
@@ -996,7 +1035,7 @@ class TeamSpeakService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "ts3_connection"
         private const val NOTIFICATION_ID = 4103
         private const val STABLE_CONNECTION_MS = 30_000L
-        private const val WAITING_FOR_NETWORK_DETAIL = "网络不可用，恢复后自动重连"
+        private const val WAITING_FOR_NETWORK_DETAIL = "Rede indisponível; reconexão automática quando restabelecida"
         private const val MAX_PARTICIPANT_VOLUME_PERCENT = 200
         private val foregroundPhases = setOf(
             ConnectionPhase.CONNECTING,

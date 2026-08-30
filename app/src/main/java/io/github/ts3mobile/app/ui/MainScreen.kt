@@ -1,6 +1,7 @@
 package io.github.ts3mobile.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -64,8 +65,11 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -94,12 +98,14 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import io.github.ts3mobile.app.ConnectionFormState
 import io.github.ts3mobile.app.service.MicrophoneMode
 import io.github.ts3mobile.app.service.ParticipantAudioSettings
 import io.github.ts3mobile.app.service.audioControlKey
 import io.github.ts3mobile.app.service.TeamSpeakServiceState
 import io.github.ts3mobile.audio.opus.AudioRoutingState
+import io.github.ts3mobile.audio.opus.SuppressionMode
 import io.github.ts3mobile.protocol.ChannelTree
 import io.github.ts3mobile.protocol.ConnectionPhase
 import io.github.ts3mobile.protocol.Ts3Participant
@@ -123,21 +129,27 @@ fun MainScreen(
     onMicrophoneModeChanged: (MicrophoneMode) -> Unit,
     onPushToTalkChanged: (Boolean) -> Unit,
     onJoinChannel: (Int, String) -> Unit,
+    suppressionMode: SuppressionMode = SuppressionMode.RNNOISE,
+    onSuppressionModeChanged: (SuppressionMode) -> Unit = {},
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "TS3 Mobile",
-                        fontSize = 22.sp,
+                        text = "TS3 MOBILE",
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 },
                 actions = {
                     StatusIndicator(serviceState.status.phase)
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(20.dp))
                 },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
             )
         },
     ) { contentPadding ->
@@ -169,6 +181,8 @@ fun MainScreen(
                     onAudioRouteSelected = onAudioRouteSelected,
                     onMicrophoneModeChanged = onMicrophoneModeChanged,
                     onPushToTalkChanged = onPushToTalkChanged,
+                    suppressionMode = suppressionMode,
+                    onSuppressionModeChanged = onSuppressionModeChanged,
                     onJoinChannel = onJoinChannel,
                 )
             } else {
@@ -214,9 +228,10 @@ private fun ConnectionForm(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = "连接服务器",
+            text = "CONECTAR AO SERVIDOR",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
         )
 
         Row(
@@ -230,12 +245,12 @@ private fun ConnectionForm(
                 modifier = Modifier.weight(1f),
                 enabled = !isConnecting,
                 singleLine = true,
-                label = { Text("服务器地址") },
+                label = { Text("Endereço do servidor") },
                 placeholder = { Text("voice.example.com") },
                 leadingIcon = { Icon(Icons.Outlined.Dns, contentDescription = null) },
                 isError = invalidHost,
                 supportingText = if (invalidHost) {
-                    { Text("请输入服务器地址") }
+                    { Text("Digite o endereço do servidor") }
                 } else {
                     null
                 },
@@ -247,7 +262,7 @@ private fun ConnectionForm(
                 modifier = Modifier.width(108.dp),
                 enabled = !isConnecting,
                 singleLine = true,
-                label = { Text("端口") },
+                label = { Text("Porta") },
                 isError = invalidPort,
                 supportingText = if (invalidPort) {
                     { Text("1–65535") }
@@ -267,11 +282,11 @@ private fun ConnectionForm(
             modifier = Modifier.fillMaxWidth(),
             enabled = !isConnecting,
             singleLine = true,
-            label = { Text("昵称") },
+            label = { Text("Apelido") },
             leadingIcon = { Icon(Icons.Outlined.AlternateEmail, contentDescription = null) },
             isError = invalidNickname,
             supportingText = if (invalidNickname) {
-                { Text("昵称需要 3–30 个字符") }
+                { Text("O apelido deve ter de 3 a 30 caracteres") }
             } else {
                 null
             },
@@ -284,7 +299,7 @@ private fun ConnectionForm(
             modifier = Modifier.fillMaxWidth(),
             enabled = !isConnecting,
             singleLine = true,
-            label = { Text("服务器密码（可选）") },
+            label = { Text("Senha do servidor (opcional)") },
             leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -294,7 +309,7 @@ private fun ConnectionForm(
                         } else {
                             Icons.Outlined.Visibility
                         },
-                        contentDescription = if (passwordVisible) "隐藏密码" else "显示密码",
+                        contentDescription = if (passwordVisible) "Ocultar senha" else "Mostrar senha",
                     )
                 }
             },
@@ -327,9 +342,9 @@ private fun ConnectionForm(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     when (phase) {
-                        ConnectionPhase.RECONNECTING -> "取消重连"
-                        ConnectionPhase.DISCONNECTING -> "正在断开"
-                        else -> "取消连接"
+                        ConnectionPhase.RECONNECTING -> "Cancelar reconexão"
+                        ConnectionPhase.DISCONNECTING -> "Desconectando"
+                        else -> "Cancelar conexão"
                     },
                 )
             }
@@ -342,7 +357,7 @@ private fun ConnectionForm(
             ) {
                 Icon(Icons.Default.Link, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (phase == ConnectionPhase.ERROR) "重新连接" else "连接")
+                Text(if (phase == ConnectionPhase.ERROR) "Reconectar" else "Conectar")
             }
         }
     }
@@ -358,12 +373,20 @@ private fun ConnectedContent(
     onAudioRouteSelected: (Int) -> Unit,
     onMicrophoneModeChanged: (MicrophoneMode) -> Unit,
     onPushToTalkChanged: (Boolean) -> Unit,
+    suppressionMode: SuppressionMode,
+    onSuppressionModeChanged: (SuppressionMode) -> Unit,
     onJoinChannel: (Int, String) -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Column(Modifier.fillMaxSize()) {
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
+        Surface(
+            modifier = Modifier.border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            ),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -379,8 +402,8 @@ private fun ConnectedContent(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${state.snapshot.channels.size} 个频道 · " +
-                            "${state.snapshot.participants.size} 人在线 · " +
+                        text = "${state.snapshot.channels.size} canais · " +
+                            "${state.snapshot.participants.size} online · " +
                             state.audioRouting.selectedRoute.label,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -399,26 +422,36 @@ private fun ConnectedContent(
                         } else {
                             Icons.AutoMirrored.Outlined.VolumeUp
                         },
-                        contentDescription = if (state.playbackMuted) "打开扬声器" else "静音扬声器",
+                        contentDescription = if (state.playbackMuted) "Ativar alto-falante" else "Silenciar alto-falante",
                     )
                 }
                 IconButton(onClick = onDisconnect) {
-                    Icon(Icons.Default.PowerSettingsNew, contentDescription = "断开连接")
+                    Icon(Icons.Default.PowerSettingsNew, contentDescription = "Desconectar")
                 }
             }
         }
 
-        TabRow(selectedTabIndex = selectedTab) {
+        TabRow(
+            selectedTabIndex = selectedTab,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            },
+        ) {
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
-                text = { Text("频道") },
+                text = { Text("Canais") },
                 icon = { Icon(Icons.Outlined.Tag, contentDescription = null) },
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text("用户") },
+                text = { Text("Usuários") },
                 icon = { Icon(Icons.Outlined.Groups, contentDescription = null) },
             )
         }
@@ -440,6 +473,8 @@ private fun ConnectedContent(
             isTransmitting = state.isTransmitting,
             onMicrophoneModeChanged = onMicrophoneModeChanged,
             onPushToTalkChanged = onPushToTalkChanged,
+            suppressionMode = suppressionMode,
+            onSuppressionModeChanged = onSuppressionModeChanged,
         )
     }
 }
@@ -455,7 +490,7 @@ private fun AudioRouteMenu(
         IconButton(onClick = { expanded = true }) {
             Icon(
                 Icons.Outlined.Headphones,
-                contentDescription = "选择音频设备，当前为${routing.selectedRoute.label}",
+                contentDescription = "Selecionar dispositivo de áudio; atual: ${routing.selectedRoute.label}",
             )
         }
         DropdownMenu(
@@ -496,8 +531,16 @@ private fun MicrophoneControl(
     isTransmitting: Boolean,
     onMicrophoneModeChanged: (MicrophoneMode) -> Unit,
     onPushToTalkChanged: (Boolean) -> Unit,
+    suppressionMode: SuppressionMode,
+    onSuppressionModeChanged: (SuppressionMode) -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
+    Surface(
+        modifier = Modifier.border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        ),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -505,6 +548,13 @@ private fun MicrophoneControl(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            Text(
+                text = "ÁUDIO / MICROFONE",
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 MicrophoneMode.entries.forEachIndexed { index, option ->
                     SegmentedButton(
@@ -517,13 +567,67 @@ private fun MicrophoneControl(
                     ) {
                         Text(
                             when (option) {
-                                MicrophoneMode.OFF -> "关闭"
-                                MicrophoneMode.PUSH_TO_TALK -> "按住"
-                                MicrophoneMode.CONTINUOUS -> "常开"
+                                MicrophoneMode.OFF -> "Desativado"
+                                MicrophoneMode.PUSH_TO_TALK -> "Segure"
+                                MicrophoneMode.CONTINUOUS -> "Sempre ligado"
                             },
                         )
                     }
                 }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "Supressão de ruído",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SuppressionMode.entries.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = suppressionMode == option,
+                            onClick = { onSuppressionModeChanged(option) },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = SuppressionMode.entries.size,
+                            ),
+                        ) {
+                            Text(
+                                text = when (option) {
+                                    SuppressionMode.OFF -> "Off"
+                                    SuppressionMode.RNNOISE -> "RNNoise"
+                                    SuppressionMode.DEEPFILTER -> "DeepFilter"
+                                    SuppressionMode.NOISE_SUPPRESSOR -> "Android"
+                                    SuppressionMode.BOTH -> "Ambos"
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = when (suppressionMode) {
+                        SuppressionMode.OFF -> "Sem supressão"
+                        SuppressionMode.RNNOISE -> "Filtro neural RNNoise"
+                        SuppressionMode.DEEPFILTER -> "Filtro neural DeepFilterNet"
+                        SuppressionMode.NOISE_SUPPRESSOR -> "Filtro nativo Android"
+                        SuppressionMode.BOTH -> "RNNoise + Android combinados"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Modo atual: ${when (suppressionMode) {
+                            SuppressionMode.OFF -> "sem supressão"
+                            SuppressionMode.RNNOISE -> "RNNoise"
+                            SuppressionMode.DEEPFILTER -> "DeepFilter"
+                            SuppressionMode.NOISE_SUPPRESSOR -> "Android"
+                            SuppressionMode.BOTH -> "ambos"
+                        }}"
+                    },
+                )
             }
 
             when (mode) {
@@ -554,11 +658,11 @@ private fun MicrophoneControl(
                     )
                     Text(
                         text = if (mode == MicrophoneMode.OFF) {
-                            "麦克风已关闭"
+                            "Microfone desativado"
                         } else if (isTransmitting) {
-                            "麦克风常开中"
+                            "Microfone sempre ligado"
                         } else {
-                            "正在启动麦克风"
+                            "Iniciando microfone"
                         },
                         style = MaterialTheme.typography.labelLarge,
                     )
@@ -582,7 +686,7 @@ private fun PushToTalkButton(
             .size(58.dp)
             .semantics {
                 role = Role.Button
-                contentDescription = if (active) "正在说话" else "按住说话"
+                contentDescription = if (active) "Falando" else "Segure para falar"
                 onClick {
                     onPushToTalkChanged(!isTransmitting)
                     true
@@ -655,13 +759,13 @@ private fun ChannelList(
                 channelPassword = ""
                 passwordVisible = false
             },
-            title = { Text("加入“${channel.name}”") },
+            title = { Text("Entrar em “${channel.name}”") },
             text = {
                 OutlinedTextField(
                     value = channelPassword,
                     onValueChange = { channelPassword = it },
                     singleLine = true,
-                    label = { Text("频道密码") },
+                    label = { Text("Senha do canal") },
                     leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -671,7 +775,7 @@ private fun ChannelList(
                                 } else {
                                     Icons.Outlined.Visibility
                                 },
-                                contentDescription = if (passwordVisible) "隐藏密码" else "显示密码",
+                                contentDescription = if (passwordVisible) "Ocultar senha" else "Mostrar senha",
                             )
                         }
                     },
@@ -691,7 +795,7 @@ private fun ChannelList(
                         passwordVisible = false
                     },
                 ) {
-                    Text("加入")
+                    Text("Entrar")
                 }
             },
             dismissButton = {
@@ -702,14 +806,14 @@ private fun ChannelList(
                         passwordVisible = false
                     },
                 ) {
-                    Text("取消")
+                    Text("Cancelar")
                 }
             },
         )
     }
 
     if (rows.isEmpty()) {
-        EmptyList("没有可见频道")
+        EmptyList("Nenhum canal visível")
         return
     }
 
@@ -731,7 +835,7 @@ private fun ChannelList(
                             },
                         )
                         .combinedClickable(
-                            onClickLabel = if (isExpanded) "折叠频道" else "展开频道",
+                            onClickLabel = if (isExpanded) "Recolher canal" else "Expandir canal",
                             onClick = {
                                 expandedChannelIds = if (isExpanded) {
                                     expandedChannelIds.filterNot { it == row.channel.id }.toIntArray()
@@ -765,7 +869,7 @@ private fun ChannelList(
                         } else {
                             Icons.Outlined.KeyboardArrowRight
                         },
-                        contentDescription = if (isExpanded) "已展开" else "已折叠",
+                        contentDescription = if (isExpanded) "Expandido" else "Recolhido",
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -796,7 +900,7 @@ private fun ChannelList(
                         Spacer(Modifier.width(10.dp))
                         Icon(
                             Icons.Outlined.CheckCircle,
-                            contentDescription = "当前频道",
+                            contentDescription = "Canal atual",
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
@@ -849,9 +953,9 @@ private fun ChannelParticipantRow(
                 else -> Icons.Outlined.Person
             },
             contentDescription = when {
-                participant.isTalking -> "正在说话"
-                participant.isInputMuted -> "麦克风静音"
-                participant.isOutputMuted -> "扬声器静音"
+                participant.isTalking -> "Falando"
+                participant.isInputMuted -> "Microfone silenciado"
+                participant.isOutputMuted -> "Alto-falante silenciado"
                 else -> null
             },
             modifier = Modifier.size(19.dp),
@@ -872,7 +976,7 @@ private fun ChannelParticipantRow(
         )
         if (isOwnClient) {
             Text(
-                text = "我",
+                text = "Você",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -891,7 +995,7 @@ private fun ParticipantList(
     }
     var expandedKey by remember { mutableStateOf<String?>(null) }
     if (state.snapshot.participants.isEmpty()) {
-        EmptyList("没有可见用户")
+        EmptyList("Nenhum usuário visível")
         return
     }
 
@@ -948,9 +1052,9 @@ private fun ParticipantList(
                                     Icons.AutoMirrored.Outlined.VolumeUp
                                 },
                                 contentDescription = if (settings.muted) {
-                                    "取消静音${participant.nickname}"
+                                    "Ativar som de ${participant.nickname}"
                                 } else {
-                                    "静音${participant.nickname}"
+                                    "Silenciar ${participant.nickname}"
                                 },
                             )
                         }
@@ -961,7 +1065,7 @@ private fun ParticipantList(
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Tune,
-                                contentDescription = "调整${participant.nickname}的音量",
+                                contentDescription = "Ajustar o volume de ${participant.nickname}",
                                 tint = if (settings.volumePercent != 100) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
@@ -1008,7 +1112,7 @@ private fun participantAudioDetail(
     channelName: String,
     settings: ParticipantAudioSettings,
 ): String = when {
-    settings.muted -> "$channelName · 已静音"
+    settings.muted -> "$channelName · Silenciado"
     settings.volumePercent != 100 -> "$channelName · ${settings.volumePercent}%"
     else -> channelName
 }
@@ -1026,15 +1130,27 @@ private fun EmptyList(label: String) {
 @Composable
 private fun StatusIndicator(phase: ConnectionPhase) {
     val (label, color) = when (phase) {
-        ConnectionPhase.DISCONNECTED -> "未连接" to MaterialTheme.colorScheme.outline
-        ConnectionPhase.CONNECTING -> "连接中" to MaterialTheme.colorScheme.tertiary
-        ConnectionPhase.RECONNECTING -> "重连中" to MaterialTheme.colorScheme.tertiary
-        ConnectionPhase.CONNECTED -> "已连接" to MaterialTheme.colorScheme.primary
-        ConnectionPhase.DISCONNECTING -> "断开中" to MaterialTheme.colorScheme.tertiary
-        ConnectionPhase.ERROR -> "连接失败" to MaterialTheme.colorScheme.error
+        ConnectionPhase.DISCONNECTED -> "Desconectado" to MaterialTheme.colorScheme.outline
+        ConnectionPhase.CONNECTING -> "Conectando" to MaterialTheme.colorScheme.tertiary
+        ConnectionPhase.RECONNECTING -> "Reconectando" to MaterialTheme.colorScheme.tertiary
+        ConnectionPhase.CONNECTED -> "Conectado" to MaterialTheme.colorScheme.primary
+        ConnectionPhase.DISCONNECTING -> "Desconectando" to MaterialTheme.colorScheme.tertiary
+        ConnectionPhase.ERROR -> "Falha na conexão" to MaterialTheme.colorScheme.error
     }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .background(
+                color = if (phase == ConnectionPhase.CONNECTED) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                shape = RoundedCornerShape(50),
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(
             Modifier
                 .size(8.dp)

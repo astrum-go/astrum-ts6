@@ -1,6 +1,7 @@
 package io.github.ts3mobile.app.service
 
 import io.github.ts3mobile.audio.opus.AudioRoutingState
+import io.github.ts3mobile.audio.opus.SuppressionMode
 import io.github.ts3mobile.protocol.ConnectionStatus
 import io.github.ts3mobile.protocol.SessionSnapshot
 import io.github.ts3mobile.protocol.Ts3Participant
@@ -30,6 +31,7 @@ data class TeamSpeakServiceState(
     val playbackMuted: Boolean = false,
     val participantAudioSettings: Map<String, ParticipantAudioSettings> = emptyMap(),
     val microphoneMode: MicrophoneMode = MicrophoneMode.PUSH_TO_TALK,
+    val suppressionMode: SuppressionMode = SuppressionMode.RNNOISE,
     val isTransmitting: Boolean = false,
     val microphoneError: String? = null,
     val switchingChannelId: Int? = null,

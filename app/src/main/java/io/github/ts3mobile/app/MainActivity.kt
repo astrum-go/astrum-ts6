@@ -23,6 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ts3mobile.app.service.TeamSpeakService
 import io.github.ts3mobile.app.service.TeamSpeakServiceState
 import io.github.ts3mobile.app.service.MicrophoneMode
+import io.github.ts3mobile.audio.opus.SuppressionMode
 import io.github.ts3mobile.app.ui.MainScreen
 import io.github.ts3mobile.app.ui.theme.Ts3MobileTheme
 import io.github.ts3mobile.protocol.ServerConfig
@@ -105,6 +106,8 @@ class MainActivity : ComponentActivity() {
                     },
                     onMicrophoneModeChanged = ::setMicrophoneMode,
                     onPushToTalkChanged = ::setPushToTalkPressed,
+                    suppressionMode = serviceState.suppressionMode,
+                    onSuppressionModeChanged = ::onSuppressionModeChanged,
                     onJoinChannel = { channelId, password ->
                         serviceBinder?.joinChannel(channelId, password)
                     },
@@ -189,5 +192,9 @@ class MainActivity : ComponentActivity() {
             pendingMicrophoneMode = null
             serviceBinder?.setMicrophoneMode(mode)
         }
+    }
+
+    private fun onSuppressionModeChanged(mode: SuppressionMode) {
+        serviceBinder?.setSuppressionMode(mode)
     }
 }
