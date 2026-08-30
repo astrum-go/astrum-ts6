@@ -476,8 +476,10 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
     compute_rnn(&st->model, &st->rnn, g, &vad_prob, features, st->arch);
 #endif
     rnn_pitch_filter(st->delayed_X, st->delayed_P, st->delayed_Ex, st->delayed_Ep, st->delayed_Exp, g);
+    float speech_floor = (vad_prob > 0.35f) ? (0.04f * (vad_prob - 0.35f) / 0.65f) : 0.005f;
     for (i=0;i<NB_BANDS;i++) {
       float alpha = .6f;
+      g[i] = MAX16(g[i], speech_floor);
       g[i] = MAX16(g[i], alpha*st->lastg[i]);
       st->lastg[i] = g[i];
     }
