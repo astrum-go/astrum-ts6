@@ -1,4 +1,4 @@
-package io.github.ts3mobile.audio.opus
+﻿package io.github.ts3mobile.audio.opus
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -98,9 +98,21 @@ class OpusMicrophoneCapture(
                 System.err.println("TS3_AUDIO: failed to initialize DeepFilter: ${error.message}")
                 null
             }
+            val transientSuppressor = try {
+                NativeTransientSuppressor(SAMPLE_RATE)
+            } catch (error: Throwable) {
+                System.err.println("TS3_AUDIO: failed to initialize TransientSuppressor: ${error.message}")
+                null
+            }
+            val currentMode = suppressionMode.get()
+            val audioSource = if (currentMode == SuppressionMode.NOISE_SUPPRESSOR) {
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            } else {
+                MediaRecorder.AudioSource.VOICE_RECOGNITION
+            }
             val record = try {
                 AudioRecord.Builder()
-                    .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                    .setAudioSource(audioSource)
                     .setAudioFormat(
                         AudioFormat.Builder()
                             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -111,6 +123,7 @@ class OpusMicrophoneCapture(
                     .setBufferSizeInBytes(max(minimumBytes, CAPTURE_BUFFER_BYTES))
                     .build()
             } catch (error: Throwable) {
+                transientSuppressor?.close()
                 deepFilter?.close()
                 denoiser.close()
                 encoder.close()
@@ -118,6 +131,7 @@ class OpusMicrophoneCapture(
             }
             if (record.state != AudioRecord.STATE_INITIALIZED) {
                 record.release()
+                transientSuppressor?.close()
                 deepFilter?.close()
                 denoiser.close()
                 encoder.close()
@@ -142,6 +156,7 @@ class OpusMicrophoneCapture(
                 audioEffects.forEach { runCatching { it.release() } }
                 activeNoiseSuppressor = null
                 record.release()
+                transientSuppressor?.close()
                 deepFilter?.close()
                 denoiser.close()
                 encoder.close()
@@ -156,7 +171,7 @@ class OpusMicrophoneCapture(
             control = newControl
             audioRecord = record
             worker = Thread(
-                { captureLoop(record, encoder, denoiser, deepFilter, audioEffects, newControl) },
+                { captureLoop(record, encoder, denoiser, deepFilter, transientSuppressor, audioEffects, newControl) },
                 "ts3-opus-capture",
             ).apply { start() }
         }
@@ -206,6 +221,7 @@ class OpusMicrophoneCapture(
         encoder: NativeOpusEncoder,
         denoiser: NativeRnNoiseProcessor,
         deepFilter: NativeDeepFilterProcessor?,
+        transientSuppressor: NativeTransientSuppressor?,
         audioEffects: List<AudioEffect>,
         captureControl: CaptureControl,
     ) {
@@ -247,23 +263,27 @@ class OpusMicrophoneCapture(
                     capturedNonZeroPcm.set(true)
                 }
                 val currentMode = suppressionMode.get()
-                val rnNoiseActive = currentMode == SuppressionMode.RNNOISE || currentMode == SuppressionMode.BOTH
-                val deepFilterActive = currentMode == SuppressionMode.DEEPFILTER
-                val wasRnNoiseActive = lastSuppressionMode == SuppressionMode.RNNOISE || lastSuppressionMode == SuppressionMode.BOTH
+                val isClarityMode = currentMode == SuppressionMode.ASTRUM_CLARITY
+                val rnNoiseActive = currentMode == SuppressionMode.RNNOISE || currentMode == SuppressionMode.BOTH || isClarityMode
+                val deepFilterActive = currentMode == SuppressionMode.DEEPFILTER || (isClarityMode && deepFilter?.isReady == true)
+                val wasRnNoiseActive = lastSuppressionMode == SuppressionMode.RNNOISE ||
+                    lastSuppressionMode == SuppressionMode.BOTH ||
+                    lastSuppressionMode == SuppressionMode.ASTRUM_CLARITY
                 if (rnNoiseActive != wasRnNoiseActive) {
                     if (!rnNoiseActive) voiceGate.reset()
                     lastSuppressionMode = currentMode
                 }
-                if (rnNoiseActive) {
-                    val denoiseStarted = System.nanoTime()
-                    val vadProbability = denoiser.processInPlace(denoiserPcm)
-                    val denoiseNanos = System.nanoTime() - denoiseStarted
-                    totalDenoiseNanos += denoiseNanos
-                    maxDenoiseNanos = max(maxDenoiseNanos, denoiseNanos)
-                    vadTotal += vadProbability
-                    denoisedFrameCount++
-                    voiceGate.processInPlace(denoiserPcm, vadProbability)
-                } else if (deepFilterActive && deepFilter != null) {
+
+                // Estágio 1: Supressão nativa de transientes C++ (Anti-teclado mecânico e cliques)
+                val transientActive = isClarityMode || currentMode == SuppressionMode.DEEPFILTER || currentMode == SuppressionMode.RNNOISE
+                val transientScore = if (transientActive && transientSuppressor != null) {
+                    transientSuppressor.processInPlace(denoiserPcm)
+                } else {
+                    0f
+                }
+
+                // Estágio 2: Filtragem neural e VoiceGate adaptativo
+                if (deepFilterActive && deepFilter != null && deepFilter.isReady) {
                     val denoiseStarted = System.nanoTime()
                     val metric = deepFilter.processInPlace(denoiserPcm)
                     val denoiseNanos = System.nanoTime() - denoiseStarted
@@ -271,6 +291,19 @@ class OpusMicrophoneCapture(
                     maxDenoiseNanos = max(maxDenoiseNanos, denoiseNanos)
                     vadTotal += metric.toDouble()
                     denoisedFrameCount++
+
+                    if (isClarityMode) {
+                        voiceGate.processInPlace(denoiserPcm, vadProbability = metric, transientScore = transientScore)
+                    }
+                } else if (rnNoiseActive) {
+                    val denoiseStarted = System.nanoTime()
+                    val vadProbability = denoiser.processInPlace(denoiserPcm)
+                    val denoiseNanos = System.nanoTime() - denoiseStarted
+                    totalDenoiseNanos += denoiseNanos
+                    maxDenoiseNanos = max(maxDenoiseNanos, denoiseNanos)
+                    vadTotal += vadProbability
+                    denoisedFrameCount++
+                    voiceGate.processInPlace(denoiserPcm, vadProbability, transientScore)
                 }
                 denoiserPcm.forEach { sample ->
                     val value = sample.toDouble()
@@ -326,6 +359,7 @@ class OpusMicrophoneCapture(
             audioEffects.forEach { runCatching { it.release() } }
             activeNoiseSuppressor = null
             runCatching { record.release() }
+            transientSuppressor?.close()
             deepFilter?.close()
             denoiser.close()
             encoder.close()

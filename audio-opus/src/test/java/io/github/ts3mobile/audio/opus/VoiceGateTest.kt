@@ -100,6 +100,19 @@ class VoiceGateTest {
         assertTrue("VoiceGate p95 exceeded 1ms", p95 < 1_000_000L)
     }
 
+    @Test
+    fun transientClicksDoNotOpenClosedGate() {
+        val gate = VoiceGate()
+        val frame = ShortArray(FRAME_SAMPLES) { 15_000 }
+
+        // Simula clique de teclado mecânico: pico alto com VAD RNNoise falso positivo (0.60)
+        // porém com detecção de transiente impulsivo alta (transientScore = 0.8)
+        gate.processInPlace(frame, vadProbability = 0.60f, transientScore = 0.8f)
+
+        // O gate deve permanecer fechado (ganho mínimo)
+        assertEquals(0.15f, gate.currentGain, 0.001f)
+    }
+
     private companion object {
         const val FRAME_SAMPLES = 480
         const val WARMUP_FRAMES = 20

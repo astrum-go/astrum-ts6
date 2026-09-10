@@ -1,4 +1,4 @@
-package io.github.ts3mobile.app.service
+﻿package io.github.ts3mobile.app.service
 
 import io.github.ts3mobile.audio.opus.SuppressionMode
 import org.junit.Assert.assertEquals
@@ -7,8 +7,8 @@ import org.junit.Test
 class RnNoisePreferenceTest {
     @Test
     fun newInstallDefaultsToEnabled() {
-        assertEquals(SuppressionMode.RNNOISE, AudioPreferences.DEFAULT_SUPPRESSION_MODE)
-        assertEquals(SuppressionMode.RNNOISE, TeamSpeakServiceState().suppressionMode)
+        assertEquals(SuppressionMode.ASTRUM_CLARITY, AudioPreferences.DEFAULT_SUPPRESSION_MODE)
+        assertEquals(SuppressionMode.ASTRUM_CLARITY, TeamSpeakServiceState().suppressionMode)
     }
 
     @Test
@@ -56,6 +56,14 @@ class RnNoisePreferenceTest {
 
         assertEquals(SuppressionMode.DEEPFILTER, preferenceState.restore(persistedValue = SuppressionMode.DEEPFILTER))
         assertEquals(SuppressionMode.DEEPFILTER, preferenceState.current())
+    }
+
+    @Test
+    fun restoresPersistedClarityValue() {
+        val preferenceState = SuppressionModePreferenceState()
+
+        assertEquals(SuppressionMode.ASTRUM_CLARITY, preferenceState.restore(persistedValue = SuppressionMode.ASTRUM_CLARITY))
+        assertEquals(SuppressionMode.ASTRUM_CLARITY, preferenceState.current())
     }
 }
 

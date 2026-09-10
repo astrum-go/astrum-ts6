@@ -28,8 +28,13 @@ internal class VoiceGate(
         remainingHoldFrames = 0
     }
 
-    fun processInPlace(pcm: ShortArray, vadProbability: Float) {
-        val probability = vadProbability.coerceIn(0f, 1f)
+    fun processInPlace(pcm: ShortArray, vadProbability: Float, transientScore: Float = 0f) {
+        val effectiveVad = if (transientScore > 0f) {
+            vadProbability * (1f - (transientScore * 1.6f).coerceIn(0f, 1f))
+        } else {
+            vadProbability
+        }
+        val probability = effectiveVad.coerceIn(0f, 1f)
         when {
             probability >= openThreshold -> {
                 continueAttack()

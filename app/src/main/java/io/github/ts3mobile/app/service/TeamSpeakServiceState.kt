@@ -31,7 +31,7 @@ data class TeamSpeakServiceState(
     val playbackMuted: Boolean = false,
     val participantAudioSettings: Map<String, ParticipantAudioSettings> = emptyMap(),
     val microphoneMode: MicrophoneMode = MicrophoneMode.PUSH_TO_TALK,
-    val suppressionMode: SuppressionMode = SuppressionMode.RNNOISE,
+    val suppressionMode: SuppressionMode = AudioPreferences.DEFAULT_SUPPRESSION_MODE,
     val isTransmitting: Boolean = false,
     val microphoneError: String? = null,
     val switchingChannelId: Int? = null,

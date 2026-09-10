@@ -1,4 +1,4 @@
-package io.github.ts3mobile.app.service
+﻿package io.github.ts3mobile.app.service
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -43,7 +43,11 @@ class AudioPreferences(private val context: Context) {
             } else {
                 // Migration from old boolean rnnoise_enabled key
                 val oldEnabled = preferences[rnNoiseEnabledKey]
-                if (oldEnabled == true) SuppressionMode.RNNOISE else SuppressionMode.OFF
+                if (oldEnabled != null) {
+                    if (oldEnabled) SuppressionMode.RNNOISE else SuppressionMode.OFF
+                } else {
+                    DEFAULT_SUPPRESSION_MODE
+                }
             }
         }
 
@@ -56,7 +60,7 @@ class AudioPreferences(private val context: Context) {
     }
 
     companion object {
-        val DEFAULT_SUPPRESSION_MODE = SuppressionMode.RNNOISE
+        val DEFAULT_SUPPRESSION_MODE = SuppressionMode.ASTRUM_CLARITY
     }
 }
 

@@ -1,4 +1,4 @@
-package io.github.ts3mobile.app.ui
+﻿package io.github.ts3mobile.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -166,7 +166,7 @@ fun MainScreen(
     onMicrophoneModeChanged: (MicrophoneMode) -> Unit,
     onPushToTalkChanged: (Boolean) -> Unit,
     onJoinChannel: (Int, String) -> Unit,
-    suppressionMode: SuppressionMode = SuppressionMode.RNNOISE,
+    suppressionMode: SuppressionMode = SuppressionMode.ASTRUM_CLARITY,
     onSuppressionModeChanged: (SuppressionMode) -> Unit = {},
 ) {
     var serverToDelete by remember { mutableStateOf<SavedServer?>(null) }
@@ -1333,6 +1333,7 @@ private fun MicrophoneControl(
                             SuppressionMode.DEEPFILTER -> "DeepFilter"
                             SuppressionMode.NOISE_SUPPRESSOR -> "Android"
                             SuppressionMode.BOTH -> "Ambos"
+                            SuppressionMode.ASTRUM_CLARITY -> "Astrum Clarity"
                         }}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1417,10 +1418,11 @@ private fun MicrophoneControl(
                                             SuppressionMode.DEEPFILTER -> "DeepFilter"
                                             SuppressionMode.NOISE_SUPPRESSOR -> "Android"
                                             SuppressionMode.BOTH -> "Ambos"
+                                            SuppressionMode.ASTRUM_CLARITY -> "Astrum Clarity"
                                         },
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.labelSmall,
                                     )
                                 }
                             }
@@ -1432,6 +1434,7 @@ private fun MicrophoneControl(
                                 SuppressionMode.DEEPFILTER -> "Filtro neural profundo DeepFilterNet"
                                 SuppressionMode.NOISE_SUPPRESSOR -> "Filtro nativo do hardware Android"
                                 SuppressionMode.BOTH -> "RNNoise + Android combinados"
+                                SuppressionMode.ASTRUM_CLARITY -> "IA Avançada Astrum Clarity (Anti-teclado mecânico e cliques instantâneos)"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

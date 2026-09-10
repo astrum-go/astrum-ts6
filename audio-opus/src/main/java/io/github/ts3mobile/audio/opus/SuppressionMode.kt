@@ -1,4 +1,4 @@
-package io.github.ts3mobile.audio.opus
+﻿package io.github.ts3mobile.audio.opus
 
 enum class SuppressionMode {
     OFF,
@@ -6,4 +6,5 @@ enum class SuppressionMode {
     DEEPFILTER,
     NOISE_SUPPRESSOR,
     BOTH,
+    ASTRUM_CLARITY,
 }

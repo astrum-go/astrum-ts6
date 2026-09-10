@@ -27,6 +27,9 @@ internal class NativeDeepFilterProcessor(
             )
             df.onModelLoaded {
                 modelReady.set(true)
+                runCatching {
+                    df.setPostFilterBeta(DEFAULT_POST_FILTER_BETA)
+                }
             }
             val frameLengthBytes = df.frameLength
             val bufferSize = if (frameLengthBytes > 0) frameLengthBytes.toInt() else DEFAULT_FRAME_BYTES
@@ -46,11 +49,11 @@ internal class NativeDeepFilterProcessor(
         get() = modelReady.get() && !isClosed.get() && nativeFilter != null
 
     fun processInPlace(pcm: ShortArray): Float {
-        if (isClosed.get() || nativeFilter == null || directBuffer == null) return 0f
+        if (isClosed.get() || !modelReady.get() || nativeFilter == null || directBuffer == null) return 0f
         if (pcm.isEmpty()) return 0f
 
         synchronized(lock) {
-            if (isClosed.get()) return 0f
+            if (isClosed.get() || !modelReady.get()) return 0f
             val buffer = directBuffer
             val sampleCount = pcm.size
             val requiredBytes = sampleCount * 2
@@ -86,7 +89,8 @@ internal class NativeDeepFilterProcessor(
     }
 
     companion object {
-        const val DEFAULT_ATTENUATION_LIMIT = 50.0f
+        const val DEFAULT_ATTENUATION_LIMIT = 80.0f
+        const val DEFAULT_POST_FILTER_BETA = 0.04f
         const val DEFAULT_FRAME_SAMPLES = 480
         const val DEFAULT_FRAME_BYTES = DEFAULT_FRAME_SAMPLES * 2
     }

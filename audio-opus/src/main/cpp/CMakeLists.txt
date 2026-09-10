@@ -30,8 +30,16 @@ target_compile_options(rnnoise PRIVATE -O3 -Wall -Wextra -Wno-unused-parameter)
 set_target_properties(rnnoise PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(rnnoise PUBLIC m)
 
-add_library(ts3opus_jni SHARED opus_jni.cpp rnnoise_jni.cpp)
+add_library(
+    ts3opus_jni
+    SHARED
+    opus_jni.cpp
+    rnnoise_jni.cpp
+    transient_suppressor.cpp
+    transient_suppressor_jni.cpp
+)
 
 target_compile_features(ts3opus_jni PRIVATE cxx_std_17)
 target_compile_options(ts3opus_jni PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(ts3opus_jni PRIVATE opus::libopus.a rnnoise)
+
