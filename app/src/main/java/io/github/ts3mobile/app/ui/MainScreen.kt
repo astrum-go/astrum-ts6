@@ -6,17 +6,19 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,20 +34,25 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.rotate
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Headphones
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Lock
@@ -55,15 +62,19 @@ import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -81,6 +92,7 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,6 +104,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -103,14 +116,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.ts3mobile.app.ConnectionFormState
+import io.github.ts3mobile.app.MainTab
+import io.github.ts3mobile.app.data.SavedServer
 import io.github.ts3mobile.app.service.MicrophoneMode
 import io.github.ts3mobile.app.service.ParticipantAudioSettings
-import io.github.ts3mobile.app.service.audioControlKey
 import io.github.ts3mobile.app.service.TeamSpeakServiceState
+import io.github.ts3mobile.app.service.audioControlKey
 import io.github.ts3mobile.audio.opus.AudioRoutingState
 import io.github.ts3mobile.audio.opus.SuppressionMode
 import io.github.ts3mobile.protocol.ChannelTree
@@ -121,13 +137,27 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    form: ConnectionFormState,
+    savedServers: List<SavedServer>,
+    lastSelectedServerId: String?,
+    activeTab: MainTab,
+    onTabChanged: (MainTab) -> Unit,
+    quickForm: ConnectionFormState,
+    onQuickHostChanged: (String) -> Unit,
+    onQuickPortChanged: (String) -> Unit,
+    onQuickNicknameChanged: (String) -> Unit,
+    onQuickPasswordChanged: (String) -> Unit,
+    onQuickSaveToListChanged: (Boolean) -> Unit,
+    onQuickServerNameChanged: (String) -> Unit,
+    onQuickConnect: () -> Unit,
+    onConnectToSavedServer: (SavedServer) -> Unit,
+    onOpenAddServer: () -> Unit,
+    onOpenEditServer: (SavedServer) -> Unit,
+    editingServer: SavedServer?,
+    isCreatingNew: Boolean,
+    onDismissEditor: () -> Unit,
+    onSaveServer: (SavedServer, Boolean) -> Unit,
+    onDeleteServer: (String) -> Unit,
     serviceState: TeamSpeakServiceState,
-    onHostChanged: (String) -> Unit,
-    onPortChanged: (String) -> Unit,
-    onNicknameChanged: (String) -> Unit,
-    onPasswordChanged: (String) -> Unit,
-    onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onPlaybackMutedChange: (Boolean) -> Unit,
     onParticipantMutedChange: (String, Boolean) -> Unit,
@@ -139,22 +169,43 @@ fun MainScreen(
     suppressionMode: SuppressionMode = SuppressionMode.RNNOISE,
     onSuppressionModeChanged: (SuppressionMode) -> Unit = {},
 ) {
+    var serverToDelete by remember { mutableStateOf<SavedServer?>(null) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "TS3 MOBILE",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(32.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "3",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
+                        }
+                        Text(
+                            text = "TS3 Mobile",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 },
                 actions = {
                     StatusIndicator(serviceState.status.phase)
-                    Spacer(Modifier.width(20.dp))
+                    Spacer(Modifier.width(16.dp))
                 },
-                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
             )
@@ -193,15 +244,163 @@ fun MainScreen(
                     onJoinChannel = onJoinChannel,
                 )
             } else {
-                ConnectionForm(
-                    form = form,
+                DisconnectedContent(
+                    savedServers = savedServers,
+                    lastSelectedServerId = lastSelectedServerId,
+                    activeTab = activeTab,
+                    onTabChanged = onTabChanged,
+                    quickForm = quickForm,
+                    onQuickHostChanged = onQuickHostChanged,
+                    onQuickPortChanged = onQuickPortChanged,
+                    onQuickNicknameChanged = onQuickNicknameChanged,
+                    onQuickPasswordChanged = onQuickPasswordChanged,
+                    onQuickSaveToListChanged = onQuickSaveToListChanged,
+                    onQuickServerNameChanged = onQuickServerNameChanged,
+                    onQuickConnect = onQuickConnect,
+                    onConnectToSavedServer = onConnectToSavedServer,
+                    onOpenAddServer = onOpenAddServer,
+                    onOpenEditServer = onOpenEditServer,
+                    onRequestDeleteServer = { serverToDelete = it },
                     phase = serviceState.status.phase,
-                    onHostChanged = onHostChanged,
-                    onPortChanged = onPortChanged,
-                    onNicknameChanged = onNicknameChanged,
-                    onPasswordChanged = onPasswordChanged,
-                    onConnect = onConnect,
-                    onDisconnect = onDisconnect,
+                    onCancelConnection = onDisconnect,
+                )
+            }
+        }
+    }
+
+    // Diálogo de Adicionar / Editar Servidor
+    editingServer?.let { server ->
+        ServerEditDialog(
+            initialServer = server,
+            isNew = isCreatingNew,
+            onDismiss = onDismissEditor,
+            onSave = onSaveServer,
+        )
+    }
+
+    // Diálogo de confirmação de exclusão
+    serverToDelete?.let { server ->
+        AlertDialog(
+            onDismissRequest = { serverToDelete = null },
+            title = { Text("Excluir servidor") },
+            text = { Text("Deseja realmente remover \"${server.displayName}\" dos seus servidores salvos?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteServer(server.id)
+                        serverToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("Excluir")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { serverToDelete = null }) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun DisconnectedContent(
+    savedServers: List<SavedServer>,
+    lastSelectedServerId: String?,
+    activeTab: MainTab,
+    onTabChanged: (MainTab) -> Unit,
+    quickForm: ConnectionFormState,
+    onQuickHostChanged: (String) -> Unit,
+    onQuickPortChanged: (String) -> Unit,
+    onQuickNicknameChanged: (String) -> Unit,
+    onQuickPasswordChanged: (String) -> Unit,
+    onQuickSaveToListChanged: (Boolean) -> Unit,
+    onQuickServerNameChanged: (String) -> Unit,
+    onQuickConnect: () -> Unit,
+    onConnectToSavedServer: (SavedServer) -> Unit,
+    onOpenAddServer: () -> Unit,
+    onOpenEditServer: (SavedServer) -> Unit,
+    onRequestDeleteServer: (SavedServer) -> Unit,
+    phase: ConnectionPhase,
+    onCancelConnection: () -> Unit,
+) {
+    val isConnecting = phase == ConnectionPhase.CONNECTING ||
+        phase == ConnectionPhase.RECONNECTING ||
+        phase == ConnectionPhase.DISCONNECTING
+
+    Column(Modifier.fillMaxSize()) {
+        if (isConnecting) {
+            ConnectingBanner(phase = phase, onCancel = onCancelConnection)
+        }
+
+        TabRow(
+            selectedTabIndex = if (activeTab == MainTab.SAVED_SERVERS) 0 else 1,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
+            indicator = { tabPositions ->
+                val selectedIndex = if (activeTab == MainTab.SAVED_SERVERS) 0 else 1
+                TabRowDefaults.SecondaryIndicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedIndex]),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            },
+        ) {
+            Tab(
+                selected = activeTab == MainTab.SAVED_SERVERS,
+                onClick = { onTabChanged(MainTab.SAVED_SERVERS) },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Outlined.Bookmark, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(
+                            text = if (savedServers.isNotEmpty()) {
+                                "Meus Servidores (${savedServers.size})"
+                            } else {
+                                "Meus Servidores"
+                            },
+                        )
+                    }
+                },
+            )
+            Tab(
+                selected = activeTab == MainTab.QUICK_CONNECT,
+                onClick = { onTabChanged(MainTab.QUICK_CONNECT) },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Outlined.FlashOn, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Conexão Rápida")
+                    }
+                },
+            )
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
+            when (activeTab) {
+                MainTab.SAVED_SERVERS -> SavedServersScreen(
+                    servers = savedServers,
+                    lastSelectedServerId = lastSelectedServerId,
+                    isConnecting = isConnecting,
+                    onConnect = onConnectToSavedServer,
+                    onOpenAddServer = onOpenAddServer,
+                    onEdit = onOpenEditServer,
+                    onDelete = onRequestDeleteServer,
+                )
+                MainTab.QUICK_CONNECT -> QuickConnectScreen(
+                    form = quickForm,
+                    isConnecting = isConnecting,
+                    onHostChanged = onQuickHostChanged,
+                    onPortChanged = onQuickPortChanged,
+                    onNicknameChanged = onQuickNicknameChanged,
+                    onPasswordChanged = onQuickPasswordChanged,
+                    onSaveToListChanged = onQuickSaveToListChanged,
+                    onServerNameChanged = onQuickServerNameChanged,
+                    onConnect = onQuickConnect,
                 )
             }
         }
@@ -209,19 +408,387 @@ fun MainScreen(
 }
 
 @Composable
-private fun ConnectionForm(
-    form: ConnectionFormState,
+private fun ConnectingBanner(
     phase: ConnectionPhase,
+    onCancel: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.5.dp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    text = when (phase) {
+                        ConnectionPhase.RECONNECTING -> "Reconectando ao servidor..."
+                        ConnectionPhase.DISCONNECTING -> "Desconectando..."
+                        else -> "Conectando ao servidor..."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            TextButton(
+                onClick = onCancel,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            ) {
+                Text("Cancelar")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedServersScreen(
+    servers: List<SavedServer>,
+    lastSelectedServerId: String?,
+    isConnecting: Boolean,
+    onConnect: (SavedServer) -> Unit,
+    onOpenAddServer: () -> Unit,
+    onEdit: (SavedServer) -> Unit,
+    onDelete: (SavedServer) -> Unit,
+) {
+    if (servers.isEmpty()) {
+        EmptyServersPlaceholder(onAddServer = onOpenAddServer)
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Escolha um servidor para conectar:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                FilledTonalButton(
+                    onClick = onOpenAddServer,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Adicionar", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                items(servers, key = { it.id }) { server ->
+                    val isLastSelected = server.id == lastSelectedServerId
+                    SavedServerCard(
+                        server = server,
+                        isLastSelected = isLastSelected,
+                        isConnecting = isConnecting,
+                        onConnect = { onConnect(server) },
+                        onEdit = { onEdit(server) },
+                        onDelete = { onDelete(server) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedServerCard(
+    server: SavedServer,
+    isLastSelected: Boolean,
+    isConnecting: Boolean,
+    onConnect: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !isConnecting, onClick = onConnect),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isLastSelected) {
+                MaterialTheme.colorScheme.surfaceVariant
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        border = if (isLastSelected) {
+            BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.Dns,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = server.displayName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (server.password.isNotEmpty()) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Lock,
+                                    contentDescription = "Protegido por senha",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
+                        if (isLastSelected) {
+                            Text(
+                                text = "Último servidor usado",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    }
+                }
+
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Mais opções",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Editar") },
+                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Excluir", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            },
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AlternateEmail,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = server.hostPortDisplay,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = server.nickname,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 1.dp,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = onConnect,
+                    enabled = !isConnecting,
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                ) {
+                    Icon(Icons.Filled.Link, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Conectar", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyServersPlaceholder(
+    onAddServer: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.size(72.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Dns,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        Text(
+            text = "Nenhum servidor salvo",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            text = "Adicione seus servidores favoritos do TeamSpeak para conectar com apenas um toque quando abrir o app.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        Button(
+            onClick = onAddServer,
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Adicionar Servidor", fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun QuickConnectScreen(
+    form: ConnectionFormState,
+    isConnecting: Boolean,
     onHostChanged: (String) -> Unit,
     onPortChanged: (String) -> Unit,
     onNicknameChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit,
+    onSaveToListChanged: (Boolean) -> Unit,
+    onServerNameChanged: (String) -> Unit,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
 ) {
-    val isConnecting = phase == ConnectionPhase.CONNECTING ||
-        phase == ConnectionPhase.RECONNECTING ||
-        phase == ConnectionPhase.DISCONNECTING
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
     val invalidHost = form.submitted && form.host.isBlank()
     val invalidPort = form.submitted && (form.port.toIntOrNull() !in 1..65535)
@@ -231,14 +798,20 @@ private fun ConnectionForm(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 20.dp),
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = "CONECTAR AO SERVIDOR",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
+            text = "Conexão Rápida",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
+        )
+
+        Text(
+            text = "Digite os dados do servidor para se conectar diretamente:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Row(
@@ -253,11 +826,11 @@ private fun ConnectionForm(
                 enabled = !isConnecting,
                 singleLine = true,
                 label = { Text("Endereço do servidor") },
-                placeholder = { Text("voice.example.com") },
+                placeholder = { Text("voice.exemplo.com") },
                 leadingIcon = { Icon(Icons.Outlined.Dns, contentDescription = null) },
                 isError = invalidHost,
                 supportingText = if (invalidHost) {
-                    { Text("Digite o endereço do servidor") }
+                    { Text("Digite o endereço") }
                 } else {
                     null
                 },
@@ -290,10 +863,10 @@ private fun ConnectionForm(
             enabled = !isConnecting,
             singleLine = true,
             label = { Text("Apelido") },
-            leadingIcon = { Icon(Icons.Outlined.AlternateEmail, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
             isError = invalidNickname,
             supportingText = if (invalidNickname) {
-                { Text("O apelido deve ter de 3 a 30 caracteres") }
+                { Text("3 a 30 caracteres") }
             } else {
                 null
             },
@@ -311,63 +884,221 @@ private fun ConnectionForm(
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
-                        imageVector = if (passwordVisible) {
-                            Icons.Outlined.VisibilityOff
-                        } else {
-                            Icons.Outlined.Visibility
-                        },
+                        imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                         contentDescription = if (passwordVisible) "Ocultar senha" else "Mostrar senha",
                     )
                 }
             },
-            visualTransformation = if (passwordVisible) {
-                VisualTransformation.None
-            } else {
-                PasswordVisualTransformation()
-            },
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         )
 
-        Spacer(Modifier.height(4.dp))
-
-        if (isConnecting) {
-            OutlinedButton(
-                onClick = onDisconnect,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                enabled = phase != ConnectionPhase.DISCONNECTING,
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (phase != ConnectionPhase.DISCONNECTING) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Salvar este servidor na minha lista",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Switch(
+                        checked = form.saveToList,
+                        onCheckedChange = onSaveToListChanged,
+                        enabled = !isConnecting,
+                    )
                 }
-                Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    when (phase) {
-                        ConnectionPhase.RECONNECTING -> "Cancelar reconexão"
-                        ConnectionPhase.DISCONNECTING -> "Desconectando"
-                        else -> "Cancelar conexão"
-                    },
-                )
-            }
-        } else {
-            Button(
-                onClick = onConnect,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-            ) {
-                Icon(Icons.Default.Link, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (phase == ConnectionPhase.ERROR) "Reconectar" else "Conectar")
+
+                AnimatedVisibility(visible = form.saveToList) {
+                    OutlinedTextField(
+                        value = form.serverName,
+                        onValueChange = onServerNameChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isConnecting,
+                        singleLine = true,
+                        label = { Text("Nome do servidor (opcional)") },
+                        placeholder = { Text("Ex: Servidor dos Amigos") },
+                    )
+                }
             }
         }
+
+        Spacer(Modifier.height(4.dp))
+
+        Button(
+            onClick = onConnect,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            enabled = !isConnecting,
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Icon(Icons.Filled.Link, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Conectar", fontWeight = FontWeight.SemiBold)
+        }
     }
+}
+
+@Composable
+private fun ServerEditDialog(
+    initialServer: SavedServer,
+    isNew: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (SavedServer, Boolean) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf(initialServer.name) }
+    var host by rememberSaveable { mutableStateOf(initialServer.host) }
+    var port by rememberSaveable { mutableStateOf(initialServer.port.toString()) }
+    var nickname by rememberSaveable { mutableStateOf(initialServer.nickname) }
+    var password by rememberSaveable { mutableStateOf(initialServer.password) }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var submitted by rememberSaveable { mutableStateOf(false) }
+
+    val invalidHost = submitted && host.isBlank()
+    val invalidPort = submitted && (port.toIntOrNull() !in 1..65535)
+    val invalidNick = submitted && nickname.trim().length !in 3..30
+
+    fun validateAndBuild(): SavedServer? {
+        submitted = true
+        val portInt = port.toIntOrNull() ?: return null
+        val built = initialServer.copy(
+            name = name.trim(),
+            host = host.trim(),
+            port = portInt,
+            nickname = nickname.trim(),
+            password = password,
+        )
+        return if (built.validationError() == null) built else null
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (isNew) "Adicionar Servidor" else "Editar Servidor",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Nome do servidor (opcional)") },
+                    placeholder = { Text("Ex: Servidor da Galera") },
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = host,
+                        onValueChange = { host = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Endereço *") },
+                        placeholder = { Text("voice.exemplo.com") },
+                        isError = invalidHost,
+                        supportingText = if (invalidHost) {
+                            { Text("Obrigatório") }
+                        } else {
+                            null
+                        },
+                    )
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it.filter(Char::isDigit) },
+                        modifier = Modifier.width(92.dp),
+                        singleLine = true,
+                        label = { Text("Porta") },
+                        isError = invalidPort,
+                        supportingText = if (invalidPort) {
+                            { Text("Inválida") }
+                        } else {
+                            null
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                }
+
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = { nickname = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Apelido *") },
+                    isError = invalidNick,
+                    supportingText = if (invalidNick) {
+                        { Text("3 a 30 caracteres") }
+                    } else {
+                        null
+                    },
+                )
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Senha do servidor (opcional)") },
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (passwordVisible) "Ocultar senha" else "Mostrar senha",
+                            )
+                        }
+                    },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val server = validateAndBuild() ?: return@OutlinedButton
+                        onSave(server, false)
+                    },
+                ) {
+                    Text("Salvar")
+                }
+                Button(
+                    onClick = {
+                        val server = validateAndBuild() ?: return@Button
+                        onSave(server, true)
+                    },
+                ) {
+                    Text("Salvar e Conectar")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        },
+    )
 }
 
 @Composable
@@ -397,14 +1128,14 @@ private fun ConnectedContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = state.serverLabel.orEmpty(),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -433,7 +1164,11 @@ private fun ConnectedContent(
                     )
                 }
                 IconButton(onClick = onDisconnect) {
-                    Icon(Icons.Default.PowerSettingsNew, contentDescription = "Desconectar")
+                    Icon(
+                        Icons.Default.PowerSettingsNew,
+                        contentDescription = "Desconectar",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         }
@@ -855,20 +1590,12 @@ private fun ChannelList(
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
-                                imageVector = if (passwordVisible) {
-                                    Icons.Outlined.VisibilityOff
-                                } else {
-                                    Icons.Outlined.Visibility
-                                },
+                                imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                                 contentDescription = if (passwordVisible) "Ocultar senha" else "Mostrar senha",
                             )
                         }
                     },
-                    visualTransformation = if (passwordVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 )
             },
             confirmButton = {
@@ -1216,11 +1943,11 @@ private fun EmptyList(label: String) {
 private fun StatusIndicator(phase: ConnectionPhase) {
     val (label, color) = when (phase) {
         ConnectionPhase.DISCONNECTED -> "Desconectado" to MaterialTheme.colorScheme.outline
-        ConnectionPhase.CONNECTING -> "Conectando" to MaterialTheme.colorScheme.tertiary
-        ConnectionPhase.RECONNECTING -> "Reconectando" to MaterialTheme.colorScheme.tertiary
+        ConnectionPhase.CONNECTING -> "Conectando..." to MaterialTheme.colorScheme.tertiary
+        ConnectionPhase.RECONNECTING -> "Reconectando..." to MaterialTheme.colorScheme.tertiary
         ConnectionPhase.CONNECTED -> "Conectado" to MaterialTheme.colorScheme.primary
-        ConnectionPhase.DISCONNECTING -> "Desconectando" to MaterialTheme.colorScheme.tertiary
-        ConnectionPhase.ERROR -> "Falha na conexão" to MaterialTheme.colorScheme.error
+        ConnectionPhase.DISCONNECTING -> "Desconectando..." to MaterialTheme.colorScheme.tertiary
+        ConnectionPhase.ERROR -> "Falha" to MaterialTheme.colorScheme.error
     }
 
     Row(
@@ -1242,7 +1969,7 @@ private fun StatusIndicator(phase: ConnectionPhase) {
                 .background(color, CircleShape),
         )
         Spacer(Modifier.width(7.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge)
+        Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -1264,7 +1991,7 @@ private fun StatusMessage(phase: ConnectionPhase, detail: String) {
         modifier = Modifier
             .fillMaxWidth()
             .background(background)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         color = foreground,
         style = MaterialTheme.typography.bodySmall,
         maxLines = 3,

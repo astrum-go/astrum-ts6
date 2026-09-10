@@ -77,18 +77,44 @@ class MainActivity : ComponentActivity() {
                 val fallbackState = remember { MutableStateFlow(TeamSpeakServiceState()) }
                 val serviceState by (serviceBinder?.state ?: fallbackState)
                     .collectAsStateWithLifecycle()
-                val form by viewModel.form.collectAsStateWithLifecycle()
+                val savedServers by viewModel.savedServers.collectAsStateWithLifecycle()
+                val lastSelectedServerId by viewModel.lastSelectedServerId.collectAsStateWithLifecycle()
+                val activeTab by viewModel.activeTab.collectAsStateWithLifecycle()
+                val quickForm by viewModel.quickForm.collectAsStateWithLifecycle()
+                val editingServer by viewModel.editingServer.collectAsStateWithLifecycle()
+                val isCreatingNew by viewModel.isCreatingNew.collectAsStateWithLifecycle()
 
                 MainScreen(
-                    form = form,
-                    serviceState = serviceState,
-                    onHostChanged = viewModel::setHost,
-                    onPortChanged = viewModel::setPort,
-                    onNicknameChanged = viewModel::setNickname,
-                    onPasswordChanged = viewModel::setPassword,
-                    onConnect = {
-                        viewModel.submit()?.let(::requestConnection)
+                    savedServers = savedServers,
+                    lastSelectedServerId = lastSelectedServerId,
+                    activeTab = activeTab,
+                    onTabChanged = viewModel::setActiveTab,
+                    quickForm = quickForm,
+                    onQuickHostChanged = viewModel::setQuickHost,
+                    onQuickPortChanged = viewModel::setQuickPort,
+                    onQuickNicknameChanged = viewModel::setQuickNickname,
+                    onQuickPasswordChanged = viewModel::setQuickPassword,
+                    onQuickSaveToListChanged = viewModel::setQuickSaveToList,
+                    onQuickServerNameChanged = viewModel::setQuickServerName,
+                    onQuickConnect = {
+                        viewModel.submitQuickConnect()?.let(::requestConnection)
                     },
+                    onConnectToSavedServer = { server ->
+                        requestConnection(viewModel.connectToSavedServer(server))
+                    },
+                    onOpenAddServer = viewModel::openAddServerDialog,
+                    onOpenEditServer = viewModel::openEditServerDialog,
+                    editingServer = editingServer,
+                    isCreatingNew = isCreatingNew,
+                    onDismissEditor = viewModel::dismissEditorDialog,
+                    onSaveServer = { server, connectImmediately ->
+                        val config = viewModel.saveEditingServer(server, connectImmediately)
+                        if (connectImmediately && config != null) {
+                            requestConnection(config)
+                        }
+                    },
+                    onDeleteServer = viewModel::deleteServer,
+                    serviceState = serviceState,
                     onDisconnect = {
                         TeamSpeakService.disconnect(this)
                     },

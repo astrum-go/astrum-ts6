@@ -1,6 +1,7 @@
 package io.github.ts3mobile.app.ui.theme
 
 import android.app.Activity
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -9,61 +10,111 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFD4A72C),
-    onPrimary = Color(0xFF211A04),
-    primaryContainer = Color(0xFF4A3905),
-    onPrimaryContainer = Color(0xFFFFE49A),
-    secondary = Color(0xFFC9BFA6),
-    secondaryContainer = Color(0xFF3A3529),
-    tertiary = Color(0xFFD6B0E5),
-    tertiaryContainer = Color(0xFF47314E),
-    background = Color(0xFF09080D),
-    surface = Color(0xFF121017),
-    surfaceVariant = Color(0xFF211B27),
-    outline = Color(0xFF66586B),
-    outlineVariant = Color(0xFF382F3D),
-    onSurface = Color(0xFFF1EDE4),
-    onSurfaceVariant = Color(0xFFC5BBC8),
-    error = Color(0xFFFFB4AB),
-    errorContainer = Color(0xFF5C1517),
-    onErrorContainer = Color(0xFFFFDAD6),
+    primary = Color(0xFF3B82F6),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF1E3A8A),
+    onPrimaryContainer = Color(0xFFDBEAFE),
+    secondary = Color(0xFF60A5FA),
+    onSecondary = Color(0xFF0F172A),
+    secondaryContainer = Color(0xFF1E293B),
+    onSecondaryContainer = Color(0xFFE2E8F0),
+    tertiary = Color(0xFF38BDF8),
+    tertiaryContainer = Color(0xFF0C4A6E),
+    onTertiaryContainer = Color(0xFFE0F2FE),
+    background = Color(0xFF0B0F19),
+    surface = Color(0xFF131B2E),
+    surfaceVariant = Color(0xFF1E293B),
+    outline = Color(0xFF334155),
+    outlineVariant = Color(0xFF1E293B),
+    onSurface = Color(0xFFF8FAFC),
+    onSurfaceVariant = Color(0xFF94A3B8),
+    error = Color(0xFFF87171),
+    errorContainer = Color(0xFF7F1D1D),
+    onErrorContainer = Color(0xFFFEE2E2),
 )
 
-private val NeverEndTypography = Typography().run {
-    copy(
-        headlineLarge = headlineLarge.copy(
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-        ),
-        headlineMedium = headlineMedium.copy(
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
-        ),
-        headlineSmall = headlineSmall.copy(
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-        ),
-        labelLarge = labelLarge.copy(letterSpacing = 0.8.sp),
-        labelMedium = labelMedium.copy(letterSpacing = 1.sp),
-        labelSmall = labelSmall.copy(letterSpacing = 1.2.sp),
-    )
-}
+private val AppTypography = Typography(
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.2).sp,
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
+    ),
+    titleLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+    ),
+    titleMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
+    ),
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 15.sp,
+        lineHeight = 22.sp,
+    ),
+    bodyMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+    ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+    ),
+    labelLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+    ),
+    labelMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+    ),
+)
 
-private val NeverEndShapes = Shapes(
-    small = RoundedCornerShape(4.dp),
-    medium = RoundedCornerShape(8.dp),
-    large = RoundedCornerShape(12.dp),
+private val AppShapes = Shapes(
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
 )
 
 @Composable
@@ -83,8 +134,8 @@ fun Ts3MobileTheme(content: @Composable () -> Unit) {
 
     MaterialTheme(
         colorScheme = colors,
-        typography = NeverEndTypography,
-        shapes = NeverEndShapes,
+        typography = AppTypography,
+        shapes = AppShapes,
         content = content,
     )
 }
