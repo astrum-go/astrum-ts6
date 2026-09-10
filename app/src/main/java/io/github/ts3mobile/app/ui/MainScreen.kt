@@ -1,4 +1,4 @@
-﻿package io.github.ts3mobile.app.ui
+package io.github.ts3mobile.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -1277,6 +1277,7 @@ private fun MicrophoneControl(
     onSuppressionModeChanged: (SuppressionMode) -> Unit,
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
+    var suppressionMenuExpanded by remember { mutableStateOf(false) }
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         label = "chevronRotation",
@@ -1395,50 +1396,159 @@ private fun MicrophoneControl(
                         }
                     }
 
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = "Supressão de ruído",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                            SuppressionMode.entries.forEachIndexed { index, option ->
-                                SegmentedButton(
-                                    selected = suppressionMode == option,
-                                    onClick = { onSuppressionModeChanged(option) },
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = SuppressionMode.entries.size,
-                                    ),
+
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Surface(
+                                onClick = { suppressionMenuExpanded = true },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text(
-                                        text = when (option) {
-                                            SuppressionMode.OFF -> "Off"
-                                            SuppressionMode.RNNOISE -> "RNNoise"
-                                            SuppressionMode.DEEPFILTER -> "DeepFilter"
-                                            SuppressionMode.NOISE_SUPPRESSOR -> "Android"
-                                            SuppressionMode.BOTH -> "Ambos"
-                                            SuppressionMode.ASTRUM_CLARITY -> "Astrum Clarity"
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Icon(
+                                            imageVector = when (suppressionMode) {
+                                                SuppressionMode.ASTRUM_CLARITY -> Icons.Outlined.FlashOn
+                                                SuppressionMode.DEEPFILTER -> Icons.Outlined.GraphicEq
+                                                SuppressionMode.RNNOISE -> Icons.Outlined.GraphicEq
+                                                SuppressionMode.NOISE_SUPPRESSOR -> Icons.Outlined.Headphones
+                                                SuppressionMode.BOTH -> Icons.Outlined.Tune
+                                                SuppressionMode.OFF -> Icons.Outlined.MicOff
+                                            },
+                                            contentDescription = null,
+                                            modifier = Modifier.size(22.dp),
+                                            tint = if (suppressionMode != SuppressionMode.OFF) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                        )
+
+                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                text = when (suppressionMode) {
+                                                    SuppressionMode.ASTRUM_CLARITY -> "Astrum Clarity (Recomendado)"
+                                                    SuppressionMode.RNNOISE -> "RNNoise"
+                                                    SuppressionMode.DEEPFILTER -> "DeepFilterNet"
+                                                    SuppressionMode.NOISE_SUPPRESSOR -> "Hardware Android"
+                                                    SuppressionMode.BOTH -> "Ambos (RNNoise + Android)"
+                                                    SuppressionMode.OFF -> "Desativado"
+                                                },
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text = when (suppressionMode) {
+                                                    SuppressionMode.ASTRUM_CLARITY -> "Anti-teclado mecânico e cliques instantâneos"
+                                                    SuppressionMode.RNNOISE -> "Filtro neural clássico leve para voz"
+                                                    SuppressionMode.DEEPFILTER -> "Rede neural profunda de alta qualidade"
+                                                    SuppressionMode.NOISE_SUPPRESSOR -> "Cancelador de ruído do hardware do celular"
+                                                    SuppressionMode.BOTH -> "RNNoise + cancelador do hardware do celular"
+                                                    SuppressionMode.OFF -> "Sem nenhum cancelamento de ruído"
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.Outlined.KeyboardArrowDown,
+                                        contentDescription = "Selecionar modo de supressão",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = suppressionMenuExpanded,
+                                onDismissRequest = { suppressionMenuExpanded = false },
+                            ) {
+                                val options = listOf(
+                                    SuppressionMode.ASTRUM_CLARITY to Pair(
+                                        "Astrum Clarity (Recomendado)",
+                                        "Anti-teclado mecânico e cliques instantâneos",
+                                    ),
+                                    SuppressionMode.RNNOISE to Pair(
+                                        "RNNoise",
+                                        "Filtro neural clássico leve para voz",
+                                    ),
+                                    SuppressionMode.DEEPFILTER to Pair(
+                                        "DeepFilterNet",
+                                        "Rede neural profunda de alta qualidade",
+                                    ),
+                                    SuppressionMode.NOISE_SUPPRESSOR to Pair(
+                                        "Hardware Android",
+                                        "Cancelador nativo do chipset do dispositivo",
+                                    ),
+                                    SuppressionMode.BOTH to Pair(
+                                        "Ambos (RNNoise + Android)",
+                                        "Combina o filtro nativo do celular com RNNoise",
+                                    ),
+                                    SuppressionMode.OFF to Pair(
+                                        "Desativado",
+                                        "Sem nenhum processamento de ruído",
+                                    ),
+                                )
+
+                                options.forEach { (option, labels) ->
+                                    val isSelected = suppressionMode == option
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                Text(
+                                                    text = labels.first,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                )
+                                                Text(
+                                                    text = labels.second,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
                                         },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        onClick = {
+                                            suppressionMenuExpanded = false
+                                            onSuppressionModeChanged(option)
+                                        },
+                                        leadingIcon = {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Check,
+                                                    contentDescription = "Selecionado",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                            } else {
+                                                Spacer(Modifier.size(24.dp))
+                                            }
+                                        },
                                     )
                                 }
                             }
                         }
-                        Text(
-                            text = when (suppressionMode) {
-                                SuppressionMode.OFF -> "Sem cancelamento de ruído"
-                                SuppressionMode.RNNOISE -> "Filtro neural RNNoise clássico"
-                                SuppressionMode.DEEPFILTER -> "Filtro neural profundo DeepFilterNet"
-                                SuppressionMode.NOISE_SUPPRESSOR -> "Filtro nativo do hardware Android"
-                                SuppressionMode.BOTH -> "RNNoise + Android combinados"
-                                SuppressionMode.ASTRUM_CLARITY -> "IA Avançada Astrum Clarity (Anti-teclado mecânico e cliques instantâneos)"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
 
                     HorizontalDivider(
