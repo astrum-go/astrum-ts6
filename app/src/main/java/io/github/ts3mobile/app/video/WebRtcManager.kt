@@ -199,27 +199,11 @@ class WebRtcManager(
         val key = peerKey(remoteClientId, streamId)
         if (peerConnections.containsKey(key)) return
 
+        Log.i(TAG, "watchStream: preparing PeerConnection to receive stream $streamId from $remoteClientId")
         val peerConnection = createPeerConnection(remoteClientId, streamId) ?: return
         peerConnections[key] = peerConnection
-
-        // Viewer creates offer or waits for broadcaster's offer
-        // In TS6, either side can initiate SDP; we create an offer to start negotiation immediately
-        val constraints = MediaConstraints().apply {
-            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
-            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"))
-        }
-
-        peerConnection.createOffer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(desc: SessionDescription?) {
-                desc ?: return
-                peerConnection.setLocalDescription(SimpleSdpObserver(), desc)
-                val json = JSONObject().apply {
-                    put("type", "offer")
-                    put("sdp", desc.description)
-                }.toString()
-                sendSignalingCallback(remoteClientId, streamId, json)
-            }
-        }, constraints)
+        // Broadcaster creates the SDP offer upon accepting joinstreamrequest.
+        // As a viewer, we wait for the remote offer in handleRemoteSignaling and answer it.
     }
 
     /**
@@ -274,6 +258,7 @@ class WebRtcManager(
      */
     fun handleRemoteSignaling(senderClientId: Int, streamId: String, payload: String) {
         try {
+            Log.i(TAG, "handleRemoteSignaling: sender=$senderClientId stream=$streamId payload=$payload")
             val json = JSONObject(payload)
             val type = json.optString("type")
             val key = peerKey(senderClientId, streamId)

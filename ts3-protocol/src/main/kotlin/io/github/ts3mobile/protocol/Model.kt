@@ -44,13 +44,15 @@ data class Ts3Channel(
     val isDefault: Boolean,
 )
 
-enum class StreamType(val value: String) {
-    CAMERA("cameras"),
-    SCREEN("screens");
+enum class StreamType(val value: Int) {
+    UNKNOWN(0),
+    SCREEN(2),
+    CAMERA(3);
 
     companion object {
-        fun fromValue(value: String?): StreamType = when (value?.lowercase()) {
-            "screens", "screen" -> SCREEN
+        fun fromValue(value: String?): StreamType = when (value?.lowercase()?.trim()) {
+            "2", "screen", "screens" -> SCREEN
+            "3", "1", "camera", "cameras" -> CAMERA
             else -> CAMERA
         }
     }

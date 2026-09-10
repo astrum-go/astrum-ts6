@@ -27,6 +27,8 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -43,6 +45,10 @@ class Ts3jSessionClient : Ts3SessionClient {
 
     @Volatile
     private var voiceSource: EncodedVoiceSource? = null
+
+    private val commandExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "ts3-cmd-ack").apply { isDaemon = true }
+    }
 
     override fun connect(
         config: ServerConfig,
@@ -179,9 +185,15 @@ class Ts3jSessionClient : Ts3SessionClient {
         val ownClientId = socket?.takeIf { it.isConnected }?.clientId ?: 0
         sendRawCommand(
             "updatestream",
-            "type" to type.value,
+            "id" to streamId,
             "streamid" to streamId,
-            "action" to "start",
+            "type" to type.value.toString(),
+            "name" to if (type == StreamType.SCREEN) "Screen" else "Camera",
+            "access" to "1",
+            "mode" to "1",
+            "bitrate" to "4608",
+            "viewer_limit" to "0",
+            "audio" to "0",
             "width" to width.toString(),
             "height" to height.toString(),
             "fps" to fps.toString(),
@@ -202,6 +214,7 @@ class Ts3jSessionClient : Ts3SessionClient {
     override fun stopStream(streamId: String) {
         sendRawCommand(
             "stopstream",
+            "id" to streamId,
             "streamid" to streamId,
         )
         snapshotStore.removeStream(streamId)
@@ -212,6 +225,7 @@ class Ts3jSessionClient : Ts3SessionClient {
         sendRawCommand(
             "joinstreamrequest",
             "clid" to targetClientId.toString(),
+            "id" to streamId,
             "streamid" to streamId,
         )
     }
@@ -220,6 +234,7 @@ class Ts3jSessionClient : Ts3SessionClient {
         sendRawCommand(
             "respondjoinstreamrequest",
             "clid" to targetClientId.toString(),
+            "id" to streamId,
             "streamid" to streamId,
             "status" to if (allow) "1" else "0",
         )
@@ -229,6 +244,7 @@ class Ts3jSessionClient : Ts3SessionClient {
         sendRawCommand(
             "streamsignaling",
             "clid" to targetClientId.toString(),
+            "id" to streamId,
             "streamid" to streamId,
             "msg" to payload,
         )
@@ -243,7 +259,17 @@ class Ts3jSessionClient : Ts3SessionClient {
                 ProtocolRole.CLIENT,
                 params.map { (k, v) -> CommandSingleParameter(k, v) },
             )
-            current.writePacket(PacketBody2Command(ProtocolRole.CLIENT, cmd))
+            val paramStr = params.joinToString(" ") { "${it.first}=${it.second}" }
+            logDiagnostic("-> SEND [$name]: $paramStr")
+            val response = current.executeCommand(cmd)
+            commandExecutor.execute {
+                try {
+                    val result = response.get(5000L)
+                    logDiagnostic("<- ACK [$name]: success ($result)")
+                } catch (cmdErr: Throwable) {
+                    logDiagnostic("<- ERR [$name]: ${cmdErr.message}")
+                }
+            }
         } catch (error: Throwable) {
             logFailure("failed to send command $name", error)
         }
@@ -344,9 +370,9 @@ class Ts3jSessionClient : Ts3SessionClient {
         logDiagnostic("unknown event: ${event.command} params=$map")
         when (event.command) {
             "notifystreamstarted" -> {
-                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
                 val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
-                val typeStr = map["type"] ?: "cameras"
+                val typeStr = map["type"] ?: "3"
                 val stream = Ts6StreamInfo(
                     streamId = streamId,
                     clientId = clid,
@@ -354,22 +380,24 @@ class Ts3jSessionClient : Ts3SessionClient {
                     width = map["width"]?.toIntOrNull() ?: 1280,
                     height = map["height"]?.toIntOrNull() ?: 720,
                     fps = map["fps"]?.toIntOrNull() ?: 30,
-                    bitrate = map["bitrate"]?.toIntOrNull() ?: 0,
+                    bitrate = map["bitrate"]?.toIntOrNull() ?: 4608,
                     description = map["name"].orEmpty(),
                 )
+                logDiagnostic("Stream started: id=$streamId by clid=$clid type=${stream.type} (${stream.description})")
                 snapshotStore.putStream(stream)
                 publishSnapshotWhenConnected(client, token)
                 listener?.onStreamStarted(stream)
             }
             "notifystreamstopped" -> {
-                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
                 val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                logDiagnostic("Stream stopped: id=$streamId by clid=$clid")
                 snapshotStore.removeStream(streamId)
                 publishSnapshotWhenConnected(client, token)
                 listener?.onStreamStopped(streamId, clid)
             }
             "notifystreamupdated" -> {
-                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
                 val existing = snapshotStore.getStream(streamId)
                 if (existing != null) {
                     val updated = existing.copy(
@@ -383,15 +411,33 @@ class Ts3jSessionClient : Ts3SessionClient {
                 }
             }
             "notifystreamsignaling" -> {
-                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
                 val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
                 val payload = map["msg"] ?: map["signaling"] ?: map["data"].orEmpty()
+                logDiagnostic("<- SIGNALING received from clid=$clid stream=$streamId payloadLength=${payload.length}")
                 listener?.onStreamSignaling(Ts6StreamSignaling(streamId, clid, payload))
             }
             "notifyjoinstreamrequest" -> {
-                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
                 val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                logDiagnostic("<- JOIN REQUEST from clid=$clid for stream=$streamId")
                 listener?.onStreamJoinRequested(streamId, clid)
+            }
+            "notifyrespondjoinstreamrequest" -> {
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
+                val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                val status = map["status"]
+                logDiagnostic("<- JOIN RESPONSE from clid=$clid for stream=$streamId status=$status")
+            }
+            "notifystreamclientjoined" -> {
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
+                val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                logDiagnostic("<- CLIENT JOINED: clid=$clid stream=$streamId")
+            }
+            "notifystreamclientleft" -> {
+                val streamId = map["id"] ?: map["streamid"].orEmpty()
+                val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                logDiagnostic("<- CLIENT LEFT: clid=$clid stream=$streamId")
             }
         }
     }

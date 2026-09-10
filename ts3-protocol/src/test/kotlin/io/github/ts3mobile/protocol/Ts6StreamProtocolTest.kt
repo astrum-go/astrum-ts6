@@ -14,12 +14,16 @@ class Ts6StreamProtocolTest {
 
     @Test
     fun streamTypeParsing() {
+        assertEquals(StreamType.CAMERA, StreamType.fromValue("3"))
+        assertEquals(StreamType.SCREEN, StreamType.fromValue("2"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue("cameras"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue("camera"))
         assertEquals(StreamType.SCREEN, StreamType.fromValue("screens"))
         assertEquals(StreamType.SCREEN, StreamType.fromValue("screen"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue("unknown"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue(null))
+        assertEquals(3, StreamType.CAMERA.value)
+        assertEquals(2, StreamType.SCREEN.value)
     }
 
     @Test
