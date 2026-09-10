@@ -25,7 +25,7 @@ class VoiceGateTest {
         assertEquals(1f, gate.currentGain, 0f)
         repeat(20) { gate.processInPlace(frame, vadProbability = 0f) }
         assertTrue(gate.currentGain < 1f)
-        assertTrue(gate.currentGain >= 0.15f)
+        assertTrue(gate.currentGain >= 0.02f)
     }
 
     @Test
@@ -45,7 +45,7 @@ class VoiceGateTest {
         gate.reset()
         gate.processInPlace(ShortArray(FRAME_SAMPLES) { 10_000 }, vadProbability = 0.2f)
 
-        assertEquals(0.15f, gate.currentGain, 0f)
+        assertEquals(0.02f, gate.currentGain, 0f)
     }
 
     @Test
@@ -110,7 +110,7 @@ class VoiceGateTest {
         gate.processInPlace(frame, vadProbability = 0.60f, transientScore = 0.8f)
 
         // O gate deve permanecer fechado (ganho mínimo)
-        assertEquals(0.15f, gate.currentGain, 0.001f)
+        assertEquals(0.02f, gate.currentGain, 0.001f)
     }
 
     private companion object {

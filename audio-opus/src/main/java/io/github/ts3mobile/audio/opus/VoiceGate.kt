@@ -30,7 +30,7 @@ internal class VoiceGate(
 
     fun processInPlace(pcm: ShortArray, vadProbability: Float, transientScore: Float = 0f) {
         val effectiveVad = if (transientScore > 0f) {
-            vadProbability * (1f - (transientScore * 1.6f).coerceIn(0f, 1f))
+            vadProbability * (1f - (transientScore * 2.0f).coerceIn(0f, 1f))
         } else {
             vadProbability
         }
@@ -115,8 +115,8 @@ internal class VoiceGate(
         const val OPEN_THRESHOLD = 0.45f
         const val CLOSE_THRESHOLD = 0.25f
         const val ATTACK_FRAMES = 2
-        const val HOLD_FRAMES = 20
-        const val RELEASE_FRAMES = 30
-        const val MINIMUM_GAIN = 0.15f
+        const val HOLD_FRAMES = 16
+        const val RELEASE_FRAMES = 24
+        const val MINIMUM_GAIN = 0.02f
     }
 }

@@ -9,10 +9,10 @@ namespace {
 
 constexpr int kSubBlockSize = 16;      // ~0.33 ms at 48kHz
 constexpr float kHighPassAlpha = 0.92f;
-constexpr float kMinEnergyThreshold = 15000.0f; // Minimal energy to consider an event
-constexpr float kTransientRatioThreshold = 5.5f; // Energy surge ratio to classify as click
-constexpr float kMinGain = 0.04f;      // Max attenuation ~ -28dB on click peak
-constexpr int kHoldSubBlocks = 12;     // ~4 ms hold after click detection
+constexpr float kMinEnergyThreshold = 10000.0f; // Minimal energy to consider an event
+constexpr float kTransientRatioThreshold = 3.8f; // Energy surge ratio to classify as click
+constexpr float kMinGain = 0.015f;      // Max attenuation ~ -36.5dB on click peak
+constexpr int kHoldSubBlocks = 16;     // ~5.3 ms hold after click detection
 
 inline int16_t Clamp16(float v) {
     if (v > 32767.0f) return 32767;
@@ -119,13 +119,13 @@ float TransientSuppressor::ProcessInPlace(int16_t* pcm, int num_samples) {
 
         float target_gain = 1.0f;
         if (is_transient) {
-            float intensity = std::min(1.0f, (ratio - kTransientRatioThreshold) / 10.0f);
+            float intensity = std::min(1.0f, (ratio - kTransientRatioThreshold) / 6.0f);
             if (intensity > max_transient_intensity) {
                 max_transient_intensity = intensity;
             }
 
             // Suppress impulsive spike
-            target_gain = std::max(kMinGain, std::sqrt((slow_energy_ * 3.5f) / (sub_energy + 1.0f)));
+            target_gain = std::max(kMinGain, std::sqrt((slow_energy_ * 2.5f) / (sub_energy + 1.0f)));
             hold_counter_ = kHoldSubBlocks;
         } else if (hold_counter_ > 0) {
             hold_counter_--;

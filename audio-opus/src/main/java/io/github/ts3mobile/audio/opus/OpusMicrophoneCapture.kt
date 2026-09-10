@@ -1,4 +1,4 @@
-﻿package io.github.ts3mobile.audio.opus
+package io.github.ts3mobile.audio.opus
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -292,7 +292,7 @@ class OpusMicrophoneCapture(
                     vadTotal += metric.toDouble()
                     denoisedFrameCount++
 
-                    if (isClarityMode) {
+                    if (isClarityMode || currentMode == SuppressionMode.DEEPFILTER) {
                         voiceGate.processInPlace(denoiserPcm, vadProbability = metric, transientScore = transientScore)
                     }
                 } else if (rnNoiseActive) {

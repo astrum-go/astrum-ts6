@@ -89,8 +89,8 @@ internal class NativeDeepFilterProcessor(
     }
 
     companion object {
-        const val DEFAULT_ATTENUATION_LIMIT = 80.0f
-        const val DEFAULT_POST_FILTER_BETA = 0.04f
+        const val DEFAULT_ATTENUATION_LIMIT = 100.0f
+        const val DEFAULT_POST_FILTER_BETA = 0.05f
         const val DEFAULT_FRAME_SAMPLES = 480
         const val DEFAULT_FRAME_BYTES = DEFAULT_FRAME_SAMPLES * 2
     }
