@@ -44,6 +44,35 @@ data class Ts3Channel(
     val isDefault: Boolean,
 )
 
+enum class StreamType(val value: String) {
+    CAMERA("cameras"),
+    SCREEN("screens");
+
+    companion object {
+        fun fromValue(value: String?): StreamType = when (value?.lowercase()) {
+            "screens", "screen" -> SCREEN
+            else -> CAMERA
+        }
+    }
+}
+
+data class Ts6StreamInfo(
+    val streamId: String,
+    val clientId: Int,
+    val type: StreamType,
+    val width: Int = 1280,
+    val height: Int = 720,
+    val fps: Int = 30,
+    val bitrate: Int = 0,
+    val description: String = "",
+)
+
+data class Ts6StreamSignaling(
+    val streamId: String,
+    val senderClientId: Int,
+    val payload: String,
+)
+
 data class Ts3Participant(
     val id: Int,
     val channelId: Int,
@@ -52,12 +81,15 @@ data class Ts3Participant(
     val isInputMuted: Boolean,
     val isOutputMuted: Boolean,
     val uniqueIdentifier: String = "",
+    val hasActiveCamera: Boolean = false,
+    val hasActiveScreen: Boolean = false,
 )
 
 data class SessionSnapshot(
     val channels: List<Ts3Channel> = emptyList(),
     val participants: List<Ts3Participant> = emptyList(),
     val ownClientId: Int? = null,
+    val activeStreams: List<Ts6StreamInfo> = emptyList(),
 ) {
     val currentChannelId: Int?
         get() = participants.firstOrNull { it.id == ownClientId }?.channelId

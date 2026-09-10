@@ -35,17 +35,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.Cameraswitch
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Dns
@@ -54,14 +60,19 @@ import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material.icons.outlined.VideocamOff
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.ui.graphics.Color
+import io.github.ts3mobile.app.video.WebRtcManager
+import io.github.ts3mobile.app.video.WebRtcVideoView
+import io.github.ts3mobile.protocol.Ts6StreamInfo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -102,6 +113,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -168,6 +180,11 @@ fun MainScreen(
     onJoinChannel: (Int, String) -> Unit,
     suppressionMode: SuppressionMode = SuppressionMode.ASTRUM_CLARITY,
     onSuppressionModeChanged: (SuppressionMode) -> Unit = {},
+    webRtcManager: WebRtcManager? = null,
+    onToggleCameraBroadcast: () -> Unit = {},
+    onSwitchCamera: () -> Unit = {},
+    onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
+    onStopWatchingStream: () -> Unit = {},
 ) {
     var serverToDelete by remember { mutableStateOf<SavedServer?>(null) }
 
@@ -242,6 +259,11 @@ fun MainScreen(
                     suppressionMode = suppressionMode,
                     onSuppressionModeChanged = onSuppressionModeChanged,
                     onJoinChannel = onJoinChannel,
+                    webRtcManager = webRtcManager,
+                    onToggleCameraBroadcast = onToggleCameraBroadcast,
+                    onSwitchCamera = onSwitchCamera,
+                    onWatchStream = onWatchStream,
+                    onStopWatchingStream = onStopWatchingStream,
                 )
             } else {
                 DisconnectedContent(
@@ -1114,6 +1136,11 @@ private fun ConnectedContent(
     suppressionMode: SuppressionMode,
     onSuppressionModeChanged: (SuppressionMode) -> Unit,
     onJoinChannel: (Int, String) -> Unit,
+    webRtcManager: WebRtcManager? = null,
+    onToggleCameraBroadcast: () -> Unit = {},
+    onSwitchCamera: () -> Unit = {},
+    onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
+    onStopWatchingStream: () -> Unit = {},
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -1153,6 +1180,30 @@ private fun ConnectedContent(
                     routing = state.audioRouting,
                     onRouteSelected = onAudioRouteSelected,
                 )
+                IconButton(onClick = onToggleCameraBroadcast) {
+                    Icon(
+                        imageVector = if (state.isBroadcastingCamera) {
+                            Icons.Filled.Videocam
+                        } else {
+                            Icons.Outlined.Videocam
+                        },
+                        contentDescription = if (state.isBroadcastingCamera) "Desativar câmera" else "Ativar câmera",
+                        tint = if (state.isBroadcastingCamera) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                if (state.isBroadcastingCamera) {
+                    IconButton(onClick = onSwitchCamera) {
+                        Icon(
+                            imageVector = Icons.Outlined.Cameraswitch,
+                            contentDescription = "Alternar câmera",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
                 IconButton(onClick = { onPlaybackMutedChange(!state.playbackMuted) }) {
                     Icon(
                         imageVector = if (state.playbackMuted) {
@@ -1199,14 +1250,137 @@ private fun ConnectedContent(
         }
 
         Box(Modifier.weight(1f)) {
-            if (selectedTab == 0) {
-                ChannelList(state, onJoinChannel)
-            } else {
-                ParticipantList(
-                    state = state,
-                    onMutedChange = onParticipantMutedChange,
-                    onVolumeChange = onParticipantVolumeChange,
-                )
+            Column(Modifier.fillMaxSize()) {
+                if (state.watchingStreamId != null && webRtcManager != null) {
+                    val remoteVideoTracks by webRtcManager.remoteVideoTracks.collectAsStateWithLifecycle()
+                    val remoteTrack = remoteVideoTracks[state.watchingStreamId]
+                    val streamer = state.snapshot.participants.firstOrNull { it.id == state.watchingStreamClientId }
+                    val streamerName = streamer?.nickname ?: "Vídeo ao vivo"
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(230.dp)
+                            .padding(8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.Black),
+                    ) {
+                        Box(Modifier.fillMaxSize()) {
+                            if (remoteTrack != null) {
+                                WebRtcVideoView(
+                                    videoTrack = remoteTrack,
+                                    eglBaseContext = webRtcManager.eglBase.eglBaseContext,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            strokeWidth = 2.5.dp,
+                                            color = Color.White,
+                                        )
+                                        Text(
+                                            text = "Conectando ao vídeo de $streamerName...",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White.copy(alpha = 0.8f),
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.Black.copy(alpha = 0.5f))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = streamerName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                IconButton(
+                                    onClick = onStopWatchingStream,
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Fechar transmissão",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Box(Modifier.weight(1f)) {
+                    if (selectedTab == 0) {
+                        ChannelList(
+                            state = state,
+                            onJoinChannel = onJoinChannel,
+                            onWatchStream = onWatchStream,
+                        )
+                    } else {
+                        ParticipantList(
+                            state = state,
+                            onMutedChange = onParticipantMutedChange,
+                            onVolumeChange = onParticipantVolumeChange,
+                            onWatchStream = onWatchStream,
+                        )
+                    }
+
+                    if (state.isBroadcastingCamera && webRtcManager != null) {
+                        val localVideoTrack by webRtcManager.localVideoTrack.collectAsStateWithLifecycle()
+                        val isFrontCamera by webRtcManager.isFrontCamera.collectAsStateWithLifecycle()
+                        if (localVideoTrack != null) {
+                            Card(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(12.dp)
+                                    .size(width = 96.dp, height = 136.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                            ) {
+                                Box(Modifier.fillMaxSize()) {
+                                    WebRtcVideoView(
+                                        videoTrack = localVideoTrack,
+                                        eglBaseContext = webRtcManager.eglBase.eglBaseContext,
+                                        mirror = isFrontCamera,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    IconButton(
+                                        onClick = onSwitchCamera,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(26.dp)
+                                            .padding(2.dp)
+                                            .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Cameraswitch,
+                                            contentDescription = "Alternar câmera",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(15.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1666,6 +1840,7 @@ private fun PushToTalkButton(
 private fun ChannelList(
     state: TeamSpeakServiceState,
     onJoinChannel: (Int, String) -> Unit,
+    onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
 ) {
     var passwordChannel by remember { mutableStateOf<io.github.ts3mobile.protocol.Ts3Channel?>(null) }
     var channelPassword by rememberSaveable { mutableStateOf("") }
@@ -1792,7 +1967,7 @@ private fun ChannelList(
                         imageVector = if (isExpanded) {
                             Icons.Outlined.KeyboardArrowDown
                         } else {
-                            Icons.Outlined.KeyboardArrowRight
+                            Icons.AutoMirrored.Outlined.KeyboardArrowRight
                         },
                         contentDescription = if (isExpanded) "Expandido" else "Recolhido",
                         modifier = Modifier.size(20.dp),
@@ -1843,6 +2018,8 @@ private fun ChannelList(
                             participant = participant,
                             isOwnClient = participant.id == state.snapshot.ownClientId,
                             depth = row.depth,
+                            activeStreams = state.snapshot.activeStreams,
+                            onWatchStream = onWatchStream,
                         )
                     }
                 }
@@ -1857,7 +2034,11 @@ private fun ChannelParticipantRow(
     participant: Ts3Participant,
     isOwnClient: Boolean,
     depth: Int,
+    activeStreams: List<Ts6StreamInfo> = emptyList(),
+    onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
 ) {
+    val stream = activeStreams.firstOrNull { it.clientId == participant.id }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1905,6 +2086,18 @@ private fun ChannelParticipantRow(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
+        } else if ((participant.hasActiveCamera || participant.hasActiveScreen) && stream != null) {
+            IconButton(
+                onClick = { onWatchStream(participant.id, stream.streamId) },
+                modifier = Modifier.size(30.dp),
+            ) {
+                Icon(
+                    imageVector = if (participant.hasActiveCamera) Icons.Filled.Videocam else Icons.AutoMirrored.Outlined.ScreenShare,
+                    contentDescription = if (participant.hasActiveCamera) "Assistir câmera de ${participant.nickname}" else "Assistir tela de ${participant.nickname}",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }
@@ -1914,6 +2107,7 @@ private fun ParticipantList(
     state: TeamSpeakServiceState,
     onMutedChange: (String, Boolean) -> Unit,
     onVolumeChange: (String, Int) -> Unit,
+    onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
 ) {
     val channelsById = remember(state.snapshot.channels) {
         state.snapshot.channels.associateBy { it.id }
@@ -1967,6 +2161,16 @@ private fun ParticipantList(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                    val stream = state.snapshot.activeStreams.firstOrNull { it.clientId == participant.id }
+                    if (!isOwnClient && (participant.hasActiveCamera || participant.hasActiveScreen) && stream != null) {
+                        IconButton(onClick = { onWatchStream(participant.id, stream.streamId) }) {
+                            Icon(
+                                imageVector = if (participant.hasActiveCamera) Icons.Filled.Videocam else Icons.AutoMirrored.Outlined.ScreenShare,
+                                contentDescription = if (participant.hasActiveCamera) "Assistir câmera de ${participant.nickname}" else "Assistir tela de ${participant.nickname}",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                     if (!isOwnClient) {
                         IconButton(onClick = { onMutedChange(key, !settings.muted) }) {

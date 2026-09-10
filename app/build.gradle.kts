@@ -57,6 +57,7 @@ android {
 dependencies {
     implementation(project(":ts3-protocol"))
     implementation(project(":audio-opus"))
+    implementation(libs.stream.webrtc)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

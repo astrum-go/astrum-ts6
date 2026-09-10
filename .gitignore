@@ -15,3 +15,4 @@ captures/
 *.log
 .DS_Store
 .slim/deepwork/
+.tmp/

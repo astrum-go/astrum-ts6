@@ -1,6 +1,8 @@
 package io.github.ts3mobile.protocol
 
 import com.github.manevolent.ts3j.command.CommandException
+import com.github.manevolent.ts3j.command.SingleCommand
+import com.github.manevolent.ts3j.command.parameter.CommandSingleParameter
 import com.github.manevolent.ts3j.audio.Microphone
 import com.github.manevolent.ts3j.event.ChannelCreateEvent
 import com.github.manevolent.ts3j.event.ChannelDeletedEvent
@@ -13,14 +15,18 @@ import com.github.manevolent.ts3j.event.ClientMovedEvent
 import com.github.manevolent.ts3j.event.ClientUpdatedEvent
 import com.github.manevolent.ts3j.event.DisconnectedEvent
 import com.github.manevolent.ts3j.event.TS3Listener
+import com.github.manevolent.ts3j.event.UnknownTeamspeakEvent
 import com.github.manevolent.ts3j.enums.CodecType
+import com.github.manevolent.ts3j.protocol.ProtocolRole
 import com.github.manevolent.ts3j.protocol.packet.PacketBody0Voice
 import com.github.manevolent.ts3j.protocol.packet.PacketBody1VoiceWhisper
+import com.github.manevolent.ts3j.protocol.packet.PacketBody2Command
 import com.github.manevolent.ts3j.protocol.PacketKind
 import com.github.manevolent.ts3j.protocol.socket.client.LocalTeamspeakClientSocket
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.util.UUID
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -168,6 +174,81 @@ class Ts3jSessionClient : Ts3SessionClient {
         publishSnapshot(generation.get())
     }
 
+    override fun startStream(type: StreamType, width: Int, height: Int, fps: Int): String {
+        val streamId = UUID.randomUUID().toString()
+        val ownClientId = socket?.takeIf { it.isConnected }?.clientId ?: 0
+        sendRawCommand(
+            "updatestream",
+            "type" to type.value,
+            "streamid" to streamId,
+            "action" to "start",
+            "width" to width.toString(),
+            "height" to height.toString(),
+            "fps" to fps.toString(),
+        )
+        val streamInfo = Ts6StreamInfo(
+            streamId = streamId,
+            clientId = ownClientId,
+            type = type,
+            width = width,
+            height = height,
+            fps = fps,
+        )
+        snapshotStore.putStream(streamInfo)
+        publishSnapshot(generation.get())
+        return streamId
+    }
+
+    override fun stopStream(streamId: String) {
+        sendRawCommand(
+            "stopstream",
+            "streamid" to streamId,
+        )
+        snapshotStore.removeStream(streamId)
+        publishSnapshot(generation.get())
+    }
+
+    override fun requestJoinStream(targetClientId: Int, streamId: String) {
+        sendRawCommand(
+            "joinstreamrequest",
+            "clid" to targetClientId.toString(),
+            "streamid" to streamId,
+        )
+    }
+
+    override fun respondJoinStreamRequest(targetClientId: Int, streamId: String, allow: Boolean) {
+        sendRawCommand(
+            "respondjoinstreamrequest",
+            "clid" to targetClientId.toString(),
+            "streamid" to streamId,
+            "status" to if (allow) "1" else "0",
+        )
+    }
+
+    override fun sendStreamSignaling(targetClientId: Int, streamId: String, payload: String) {
+        sendRawCommand(
+            "streamsignaling",
+            "clid" to targetClientId.toString(),
+            "streamid" to streamId,
+            "msg" to payload,
+        )
+    }
+
+    private fun sendRawCommand(name: String, vararg params: Pair<String, String>) {
+        val current = socket?.takeIf { it.isConnected }
+            ?: error("Not connected to a TeamSpeak server")
+        try {
+            val cmd = SingleCommand(
+                name,
+                ProtocolRole.CLIENT,
+                params.map { (k, v) -> CommandSingleParameter(k, v) },
+            )
+            current.writePacket(PacketBody2Command(ProtocolRole.CLIENT, cmd))
+        } catch (error: Throwable) {
+            logFailure("failed to send command $name", error)
+        }
+    }
+
     override fun close() {
         generation.incrementAndGet()
         val current = socket
@@ -212,6 +293,7 @@ class Ts3jSessionClient : Ts3SessionClient {
 
         override fun onClientLeave(event: ClientLeaveEvent) {
             snapshotStore.removeParticipant(event.clientId)
+            snapshotStore.removeStreamsByClient(event.clientId)
             publishSnapshotWhenConnected(client, token)
         }
 
@@ -245,6 +327,72 @@ class Ts3jSessionClient : Ts3SessionClient {
                 it.copy(parentId = event.channelParentId, orderAfterId = event.channelOrder)
             }
             publishSnapshotWhenConnected(client, token)
+        }
+
+        override fun onUnknownEvent(event: UnknownTeamspeakEvent) {
+            if (token != generation.get()) return
+            handleUnknownTeamspeakEvent(event, client, token)
+        }
+    }
+
+    private fun handleUnknownTeamspeakEvent(
+        event: UnknownTeamspeakEvent,
+        client: LocalTeamspeakClientSocket,
+        token: Long,
+    ) {
+        val map = event.map ?: emptyMap()
+        logDiagnostic("unknown event: ${event.command} params=$map")
+        when (event.command) {
+            "notifystreamstarted" -> {
+                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                val typeStr = map["type"] ?: "cameras"
+                val stream = Ts6StreamInfo(
+                    streamId = streamId,
+                    clientId = clid,
+                    type = StreamType.fromValue(typeStr),
+                    width = map["width"]?.toIntOrNull() ?: 1280,
+                    height = map["height"]?.toIntOrNull() ?: 720,
+                    fps = map["fps"]?.toIntOrNull() ?: 30,
+                    bitrate = map["bitrate"]?.toIntOrNull() ?: 0,
+                    description = map["name"].orEmpty(),
+                )
+                snapshotStore.putStream(stream)
+                publishSnapshotWhenConnected(client, token)
+                listener?.onStreamStarted(stream)
+            }
+            "notifystreamstopped" -> {
+                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                snapshotStore.removeStream(streamId)
+                publishSnapshotWhenConnected(client, token)
+                listener?.onStreamStopped(streamId, clid)
+            }
+            "notifystreamupdated" -> {
+                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val existing = snapshotStore.getStream(streamId)
+                if (existing != null) {
+                    val updated = existing.copy(
+                        width = map["width"]?.toIntOrNull() ?: existing.width,
+                        height = map["height"]?.toIntOrNull() ?: existing.height,
+                        fps = map["fps"]?.toIntOrNull() ?: existing.fps,
+                        bitrate = map["bitrate"]?.toIntOrNull() ?: existing.bitrate,
+                    )
+                    snapshotStore.putStream(updated)
+                    publishSnapshotWhenConnected(client, token)
+                }
+            }
+            "notifystreamsignaling" -> {
+                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                val payload = map["msg"] ?: map["signaling"] ?: map["data"].orEmpty()
+                listener?.onStreamSignaling(Ts6StreamSignaling(streamId, clid, payload))
+            }
+            "notifyjoinstreamrequest" -> {
+                val streamId = map["streamid"] ?: map["id"].orEmpty()
+                val clid = map["clid"]?.toIntOrNull() ?: event.invokerId
+                listener?.onStreamJoinRequested(streamId, clid)
+            }
         }
     }
 

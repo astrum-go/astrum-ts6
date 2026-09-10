@@ -59,6 +59,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val cameraPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            serviceBinder?.startCameraBroadcast()
+        }
+    }
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             serviceBinder = binder as? TeamSpeakService.SessionBinder
@@ -136,6 +144,27 @@ class MainActivity : ComponentActivity() {
                     onSuppressionModeChanged = ::onSuppressionModeChanged,
                     onJoinChannel = { channelId, password ->
                         serviceBinder?.joinChannel(channelId, password)
+                    },
+                    webRtcManager = serviceBinder?.webRtc,
+                    onToggleCameraBroadcast = {
+                        if (serviceState.isBroadcastingCamera) {
+                            serviceBinder?.stopCameraBroadcast()
+                        } else {
+                            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                serviceBinder?.startCameraBroadcast()
+                            } else {
+                                cameraPermission.launch(Manifest.permission.CAMERA)
+                            }
+                        }
+                    },
+                    onSwitchCamera = {
+                        serviceBinder?.switchCamera()
+                    },
+                    onWatchStream = { clientId, streamId ->
+                        serviceBinder?.watchStream(clientId, streamId)
+                    },
+                    onStopWatchingStream = {
+                        serviceBinder?.stopWatchingStream()
                     },
                 )
             }

@@ -4,6 +4,10 @@ interface Ts3SessionListener {
     fun onStatusChanged(status: ConnectionStatus)
     fun onSnapshotChanged(snapshot: SessionSnapshot)
     fun onVoiceFrame(frame: VoiceFrame)
+    fun onStreamStarted(stream: Ts6StreamInfo) {}
+    fun onStreamStopped(streamId: String, clientId: Int) {}
+    fun onStreamSignaling(signaling: Ts6StreamSignaling) {}
+    fun onStreamJoinRequested(streamId: String, remoteClientId: Int) {}
 }
 
 interface Ts3SessionClient : AutoCloseable {
@@ -11,5 +15,10 @@ interface Ts3SessionClient : AutoCloseable {
     fun setVoiceSource(source: EncodedVoiceSource?)
     fun joinChannel(channelId: Int, password: String = "")
     fun disconnect(reason: String = "Client disconnected")
+    fun startStream(type: StreamType = StreamType.CAMERA, width: Int = 1280, height: Int = 720, fps: Int = 30): String
+    fun stopStream(streamId: String)
+    fun requestJoinStream(targetClientId: Int, streamId: String)
+    fun respondJoinStreamRequest(targetClientId: Int, streamId: String, allow: Boolean = true)
+    fun sendStreamSignaling(targetClientId: Int, streamId: String, payload: String)
     override fun close()
 }

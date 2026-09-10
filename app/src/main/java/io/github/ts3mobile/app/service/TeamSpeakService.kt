@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import io.github.ts3mobile.app.MainActivity
 import io.github.ts3mobile.app.R
 import io.github.ts3mobile.app.identity.IdentityVault
+import io.github.ts3mobile.app.video.WebRtcManager
 import io.github.ts3mobile.audio.opus.AudioDeviceRouter
 import io.github.ts3mobile.audio.opus.OpusAudioPlayer
 import io.github.ts3mobile.audio.opus.OpusMicrophoneCapture
@@ -30,9 +31,12 @@ import io.github.ts3mobile.protocol.ConnectionPhase
 import io.github.ts3mobile.protocol.ConnectionStatus
 import io.github.ts3mobile.protocol.ServerConfig
 import io.github.ts3mobile.protocol.SessionSnapshot
+import io.github.ts3mobile.protocol.StreamType
 import io.github.ts3mobile.protocol.Ts3SessionClient
 import io.github.ts3mobile.protocol.Ts3SessionListener
 import io.github.ts3mobile.protocol.Ts3jSessionClient
+import io.github.ts3mobile.protocol.Ts6StreamInfo
+import io.github.ts3mobile.protocol.Ts6StreamSignaling
 import io.github.ts3mobile.protocol.VoiceFrame
 import io.github.ts3mobile.protocol.isRetryableConnectionFailure
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +75,7 @@ class TeamSpeakService : Service() {
     private lateinit var microphone: OpusMicrophoneCapture
     private lateinit var audioRouter: AudioDeviceRouter
     private lateinit var connectivityManager: ConnectivityManager
+    private lateinit var webRtcManager: WebRtcManager
 
     @Volatile
     private var session: Ts3SessionClient? = null
@@ -121,6 +126,20 @@ class TeamSpeakService : Service() {
         audioPlayer = OpusAudioPlayer(applicationContext)
         microphone = OpusMicrophoneCapture(applicationContext, ::onMicrophoneFailure)
         audioRouter = AudioDeviceRouter(applicationContext, ::onAudioRoutingChanged)
+        webRtcManager = WebRtcManager(applicationContext) { targetClientId, streamId, payload ->
+            serviceScope.launch {
+                try {
+                    session?.sendStreamSignaling(targetClientId, streamId, payload)
+                } catch (error: Throwable) {
+                    System.err.println("TS3_VIDEO: signaling send failed: ${error.message}")
+                }
+            }
+        }
+        serviceScope.launch {
+            webRtcManager.isFrontCamera.collect { isFront ->
+                mutableState.update { it.copy(isFrontCamera = isFront) }
+            }
+        }
         serviceScope.launch {
             val persistedValue = runCatching { audioPreferences.readSuppressionMode() }
                 .getOrElse { error ->
@@ -176,6 +195,7 @@ class TeamSpeakService : Service() {
         microphone.close()
         audioPlayer.close()
         audioRouter.close()
+        runCatching { webRtcManager.close() }
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -397,6 +417,28 @@ class TeamSpeakService : Service() {
 
         override fun onVoiceFrame(frame: VoiceFrame) {
             if (isListenerActive(this) && connected) audioPlayer.submit(frame)
+        }
+
+        override fun onStreamStarted(stream: Ts6StreamInfo) {
+            if (!isListenerActive(this)) return
+        }
+
+        override fun onStreamStopped(streamId: String, clientId: Int) {
+            if (!isListenerActive(this)) return
+            if (mutableState.value.watchingStreamId == streamId) {
+                stopWatchingStream()
+            }
+        }
+
+        override fun onStreamSignaling(signaling: Ts6StreamSignaling) {
+            if (!isListenerActive(this)) return
+            webRtcManager.handleRemoteSignaling(signaling.senderClientId, signaling.streamId, signaling.payload)
+        }
+
+        override fun onStreamJoinRequested(streamId: String, remoteClientId: Int) {
+            if (!isListenerActive(this)) return
+            session?.respondJoinStreamRequest(remoteClientId, streamId, allow = true)
+            webRtcManager.handleJoinRequest(remoteClientId, streamId)
         }
     }
 
@@ -959,9 +1001,88 @@ class TeamSpeakService : Service() {
         }
     }
 
+    private fun startCameraBroadcast() {
+        if (mutableState.value.isBroadcastingCamera) return
+        serviceScope.launch {
+            try {
+                val streamId = sessionMutex.withLock {
+                    check(mutableState.value.status.phase == ConnectionPhase.CONNECTED) { "Não conectado ao servidor" }
+                    session?.startStream(StreamType.CAMERA) ?: error("Sessão indisponível")
+                }
+                webRtcManager.startCameraBroadcast(streamId)
+                mutableState.update {
+                    it.copy(
+                        isBroadcastingCamera = true,
+                        activeBroadcastStreamId = streamId,
+                    )
+                }
+            } catch (error: Throwable) {
+                System.err.println("TS3_VIDEO: falha ao iniciar transmissão de vídeo: ${error.message}")
+            }
+        }
+    }
+
+    private fun stopCameraBroadcast() {
+        val streamId = mutableState.value.activeBroadcastStreamId
+        serviceScope.launch {
+            if (streamId != null) {
+                sessionMutex.withLock {
+                    runCatching { session?.stopStream(streamId) }
+                }
+            }
+        }
+        webRtcManager.stopCameraBroadcast()
+        mutableState.update {
+            it.copy(
+                isBroadcastingCamera = false,
+                activeBroadcastStreamId = null,
+            )
+        }
+    }
+
+    private fun switchCamera() {
+        webRtcManager.switchCamera()
+        mutableState.update {
+            it.copy(isFrontCamera = webRtcManager.isFrontCamera.value)
+        }
+    }
+
+    private fun watchStream(remoteClientId: Int, streamId: String) {
+        serviceScope.launch {
+            try {
+                sessionMutex.withLock {
+                    session?.requestJoinStream(remoteClientId, streamId)
+                }
+                webRtcManager.watchStream(remoteClientId, streamId)
+                mutableState.update {
+                    it.copy(
+                        watchingStreamId = streamId,
+                        watchingStreamClientId = remoteClientId,
+                    )
+                }
+            } catch (error: Throwable) {
+                System.err.println("TS3_VIDEO: falha ao assistir transmissão: ${error.message}")
+            }
+        }
+    }
+
+    private fun stopWatchingStream() {
+        val streamId = mutableState.value.watchingStreamId ?: return
+        webRtcManager.stopWatchingStream(streamId)
+        mutableState.update {
+            it.copy(
+                watchingStreamId = null,
+                watchingStreamClientId = null,
+            )
+        }
+    }
+
     inner class SessionBinder : Binder() {
         val state: StateFlow<TeamSpeakServiceState>
             get() = this@TeamSpeakService.state
+
+        val webRtc: WebRtcManager
+            get() = this@TeamSpeakService.webRtcManager
 
         fun setPlaybackMuted(muted: Boolean) {
             audioPlayer.setMuted(muted)
@@ -998,6 +1119,26 @@ class TeamSpeakService : Service() {
 
         fun joinChannel(channelId: Int, password: String = "") {
             this@TeamSpeakService.joinChannel(channelId, password)
+        }
+
+        fun startCameraBroadcast() {
+            this@TeamSpeakService.startCameraBroadcast()
+        }
+
+        fun stopCameraBroadcast() {
+            this@TeamSpeakService.stopCameraBroadcast()
+        }
+
+        fun switchCamera() {
+            this@TeamSpeakService.switchCamera()
+        }
+
+        fun watchStream(remoteClientId: Int, streamId: String) {
+            this@TeamSpeakService.watchStream(remoteClientId, streamId)
+        }
+
+        fun stopWatchingStream() {
+            this@TeamSpeakService.stopWatchingStream()
         }
 
         fun reportMicrophonePermissionDenied() {
