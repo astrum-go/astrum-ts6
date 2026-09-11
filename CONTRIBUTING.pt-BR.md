@@ -1,8 +1,8 @@
-﻿🌐 [English](CONTRIBUTING.md) · [Português (Brasil)](CONTRIBUTING.pt-BR.md)
+🌐 [English](CONTRIBUTING.md) · [Português (Brasil)](CONTRIBUTING.pt-BR.md)
 
 # Contribuindo
 
-Obrigado pelo interesse em contribuir com o TS6 Mobile Community. Como este é um cliente de código aberto, as alterações devem preservar a estabilidade da conexão, a latência de áudio controlada e o pleno controle do usuário sobre a transmissão do microfone.
+Obrigado pelo interesse em contribuir com o Astrum TS6. Como este é um cliente de código aberto, as alterações devem preservar a estabilidade da conexão, a latência de áudio controlada e o pleno controle do usuário sobre a transmissão do microfone.
 
 ## Antes de abrir uma alteração
 

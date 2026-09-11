@@ -314,7 +314,7 @@ fun MainScreen(
                                 .clip(RoundedCornerShape(8.dp)),
                         )
                         Text(
-                            text = "TS6 Mobile Community",
+                            text = stringResource(R.string.app_name),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,

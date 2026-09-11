@@ -2,14 +2,14 @@
 
 # Avisos de Terceiros
 
-O TS6 Mobile Community incorpora ou depende dos seguintes softwares de terceiros. Cada componente permanece sujeito aos termos de sua própria licença.
+O Astrum TS6 incorpora ou depende dos seguintes softwares de terceiros. Cada componente permanece sujeito aos termos de sua própria licença.
 
 ## ts3-mobile (monet4070)
 
 - Projeto: [monet4070/ts3-mobile](https://github.com/monet4070/ts3-mobile)
 - Autor original: monet
 - Licença original: Apache License 2.0 ([http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
-- Descrição: Base arquitetural inicial de cliente Android para TeamSpeak 3 sobre a qual o TS6 Mobile Community foi construído e expandido.
+- Descrição: Base arquitetural inicial de cliente Android para TeamSpeak 3 sobre a qual o Astrum TS6 foi construído e expandido.
 
 ## ts3j
 

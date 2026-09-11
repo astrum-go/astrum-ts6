@@ -4,7 +4,7 @@
 
 Last updated: 2026-08-10
 
-TS6 Mobile Community is an unofficial client that connects directly from the Android
+Astrum TS6 is an unofficial client that connects directly from the Android
 device to TeamSpeak servers selected by the user. The maintainers do not
 operate an intermediary service for those connections.
 

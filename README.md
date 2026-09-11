@@ -1,8 +1,8 @@
 🌐 [English](README.md) · [Português (Brasil)](README.pt-BR.md)
 
-# TS6 Mobile Community
+# Astrum TS6
 
-TS6 Mobile Community is an open-source Android client for TeamSpeak,
+**Astrum TS6** (Astrum - Client for TS6) is an open-source Android client for TeamSpeak,
 built on the full client protocol provided by
 [Manevolent/ts3j](https://github.com/Manevolent/ts3j) with WebRTC video and screen sharing support for TeamSpeak 6.
 
@@ -121,7 +121,7 @@ suspected vulnerability; use the process in [SECURITY.md](SECURITY.md).
 
 ## License
 
-TS6 Mobile Community is licensed under the [GNU Affero General Public License v3.0](LICENSE). Components from
+Astrum TS6 is licensed under the [GNU Affero General Public License v3.0](LICENSE). Components from
 other projects remain under their respective licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

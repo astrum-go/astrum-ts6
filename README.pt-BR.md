@@ -1,8 +1,8 @@
 🌐 [English](README.md) · [Português (Brasil)](README.pt-BR.md)
 
-# TS6 Mobile Community
+# Astrum TS6
 
-O **TS6 Mobile Community** é um cliente Android de código aberto para TeamSpeak, construído sobre o protocolo de cliente completo fornecido pelo [Manevolent/ts3j](https://github.com/Manevolent/ts3j), com suporte a chamadas de voz e transmissões de vídeo e tela WebRTC compatíveis com o TeamSpeak 6.
+O **Astrum TS6** (Astrum - Client for TS6) é um cliente Android de código aberto para TeamSpeak, construído sobre o protocolo de cliente completo fornecido pelo [Manevolent/ts3j](https://github.com/Manevolent/ts3j), com suporte a chamadas de voz e transmissões de vídeo e tela WebRTC compatíveis com o TeamSpeak 6.
 
 Este é um projeto comunitário não oficial. Não é afiliado, endossado ou patrocinado pela TeamSpeak Systems GmbH. TeamSpeak e nomes/marcas relacionados são de propriedade de seus respectivos titulares.
 

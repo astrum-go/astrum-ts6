@@ -2,7 +2,7 @@
 
 # Contributing
 
-Thanks for helping improve TS6 Mobile Community. This is an open-source client, so
+Thanks for helping improve Astrum TS6. This is an open-source client, so
 changes should preserve connection stability, bounded audio latency, and user
 control over microphone transmission.
 

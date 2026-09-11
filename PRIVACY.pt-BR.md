@@ -1,10 +1,10 @@
-﻿🌐 [English](PRIVACY.md) · [Português (Brasil)](PRIVACY.pt-BR.md)
+🌐 [English](PRIVACY.md) · [Português (Brasil)](PRIVACY.pt-BR.md)
 
 # Política de Privacidade
 
 Última atualização: 10 de agosto de 2026
 
-O TS6 Mobile Community é um cliente não oficial que conecta diretamente do dispositivo Android aos servidores TeamSpeak escolhidos pelo usuário. Os mantenedores do projeto não operam nenhum serviço intermediário para essas conexões.
+O Astrum TS6 é um cliente não oficial que conecta diretamente do dispositivo Android aos servidores TeamSpeak escolhidos pelo usuário. Os mantenedores do projeto não operam nenhum serviço intermediário para essas conexões.
 
 ## Dados processados no dispositivo
 

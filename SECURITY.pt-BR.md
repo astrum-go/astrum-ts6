@@ -1,10 +1,10 @@
-﻿🌐 [English](SECURITY.md) · [Português (Brasil)](SECURITY.pt-BR.md)
+🌐 [English](SECURITY.md) · [Português (Brasil)](SECURITY.pt-BR.md)
 
 # Política de Segurança
 
 ## Versões suportadas
 
-O TS6 Mobile Community é um software em evolução. Correções de segurança são aplicadas na revisão mais recente da ramificação `main`. Marcos legados anteriores não são mantidos ativamente.
+O Astrum TS6 é um software em evolução. Correções de segurança são aplicadas na revisão mais recente da ramificação `main`. Marcos legados anteriores não são mantidos ativamente.
 
 ## Reportando uma vulnerabilidade
 
@@ -23,4 +23,4 @@ Os mantenedores avaliarão o relatório, verificarão a correção e coordenarã
 
 ## Escopo
 
-Vulnerabilidades que envolvam servidores oficiais do TeamSpeak, o protocolo nativo de upstream ts3j, as bibliotecas libopus ou RNNoise devem ser direcionadas aos seus respectivos projetos upstream, exceto se o problema tiver sido causado especificamente pela integração do TS6 Mobile Community.
+Vulnerabilidades que envolvam servidores oficiais do TeamSpeak, o protocolo nativo de upstream ts3j, as bibliotecas libopus ou RNNoise devem ser direcionadas aos seus respectivos projetos upstream, exceto se o problema tiver sido causado especificamente pela integração do Astrum TS6.

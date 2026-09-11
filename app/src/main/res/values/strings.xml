@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TS6 Mobile Community</string>
+    <string name="app_name">Astrum TS6</string>
     <string name="notification_channel_name">Conexão do TeamSpeak</string>
     <string name="notification_connecting">Conectando a %1$s</string>
     <string name="notification_reconnecting">Reconectando a %1$s</string>
