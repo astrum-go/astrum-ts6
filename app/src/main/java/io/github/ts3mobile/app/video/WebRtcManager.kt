@@ -19,6 +19,7 @@ import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
+import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
@@ -39,6 +40,7 @@ import java.util.concurrent.ConcurrentHashMap
 class WebRtcManager(
     private val context: Context,
     private val sendSignalingCallback: (targetClientId: Int, streamId: String, payload: String) -> Unit,
+    private val respondJoinStreamCallback: ((targetClientId: Int, streamId: String, offer: String) -> Unit)? = null,
 ) {
     val eglBase: EglBase = EglBase.create()
 
@@ -167,6 +169,14 @@ class WebRtcManager(
     }
 
     /**
+     * Updates the active broadcast stream ID when confirmed by the server.
+     */
+    fun updateBroadcastStreamId(streamId: String) {
+        Log.i(TAG, "updateBroadcastStreamId: updating from $activeBroadcastStreamId to $streamId")
+        activeBroadcastStreamId = streamId
+    }
+
+    /**
      * Stops broadcasting camera and closes active outbound peer connections.
      */
     fun stopCameraBroadcast() {
@@ -202,8 +212,15 @@ class WebRtcManager(
         Log.i(TAG, "watchStream: preparing PeerConnection to receive stream $streamId from $remoteClientId")
         val peerConnection = createPeerConnection(remoteClientId, streamId) ?: return
         peerConnections[key] = peerConnection
-        // Broadcaster creates the SDP offer upon accepting joinstreamrequest.
-        // As a viewer, we wait for the remote offer in handleRemoteSignaling and answer it.
+
+        try {
+            peerConnection.addTransceiver(
+                MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
+                RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY),
+            )
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to add RECV_ONLY video transceiver: ${e.message}")
+        }
     }
 
     /**
@@ -227,7 +244,11 @@ class WebRtcManager(
      * Handles an incoming join request from a remote client who wants to watch our stream.
      */
     fun handleJoinRequest(requesterClientId: Int, streamId: String) {
-        if (!_isBroadcasting.value || activeBroadcastStreamId != streamId) return
+        if (!_isBroadcasting.value) return
+        if (activeBroadcastStreamId == null || activeBroadcastStreamId != streamId) {
+            Log.i(TAG, "handleJoinRequest: updating activeBroadcastStreamId from $activeBroadcastStreamId to $streamId")
+            activeBroadcastStreamId = streamId
+        }
         val key = peerKey(requesterClientId, streamId)
         if (peerConnections.containsKey(key)) return
 
@@ -244,11 +265,20 @@ class WebRtcManager(
             override fun onCreateSuccess(desc: SessionDescription?) {
                 desc ?: return
                 peerConnection.setLocalDescription(SimpleSdpObserver(), desc)
-                val json = JSONObject().apply {
-                    put("type", "offer")
-                    put("sdp", desc.description)
+
+                val minifiedOffer = cleanOfferSdp(desc.description)
+
+                // 1. Respond to joinstreamrequest via TS3 protocol command (includes minified offer):
+                respondJoinStreamCallback?.invoke(requesterClientId, streamId, minifiedOffer)
+
+                // 2. Send streamsignaling offer in standard TS6 format:
+                val offerJson = JSONObject().apply {
+                    put("cmd", "offer")
+                    put("args", JSONObject().apply {
+                        put("offer", minifiedOffer)
+                    })
                 }.toString()
-                sendSignalingCallback(requesterClientId, streamId, json)
+                sendSignalingCallback(requesterClientId, streamId, offerJson)
             }
         }, constraints)
     }
@@ -259,59 +289,72 @@ class WebRtcManager(
     fun handleRemoteSignaling(senderClientId: Int, streamId: String, payload: String) {
         try {
             Log.i(TAG, "handleRemoteSignaling: sender=$senderClientId stream=$streamId payload=$payload")
-            val json = JSONObject(payload)
-            val type = json.optString("type")
             val key = peerKey(senderClientId, streamId)
+            val trimmed = payload.trim()
 
-            when (type) {
-                "offer" -> {
-                    val sdp = json.getString("sdp")
-                    var peerConnection = peerConnections[key]
-                    if (peerConnection == null) {
-                        peerConnection = createPeerConnection(senderClientId, streamId)
-                        if (peerConnection != null) {
-                            peerConnections[key] = peerConnection
-                            // If we have a local video track to send, add it
-                            localVideoTrackInternal?.let { track ->
-                                peerConnection.addTrack(track, listOf("ARDAMS"))
-                            }
-                        }
-                    }
-                    val remoteDesc = SessionDescription(SessionDescription.Type.OFFER, sdp)
-                    peerConnection?.setRemoteDescription(object : SimpleSdpObserver() {
-                        override fun onSetSuccess() {
-                            drainPendingIceCandidates(key, peerConnection)
-                            // Create answer
-                            peerConnection.createAnswer(object : SimpleSdpObserver() {
-                                override fun onCreateSuccess(desc: SessionDescription?) {
-                                    desc ?: return
-                                    peerConnection.setLocalDescription(SimpleSdpObserver(), desc)
-                                    val answerJson = JSONObject().apply {
-                                        put("type", "answer")
-                                        put("sdp", desc.description)
-                                    }.toString()
-                                    sendSignalingCallback(senderClientId, streamId, answerJson)
-                                }
-                            }, MediaConstraints())
-                        }
-                    }, remoteDesc)
+            if (trimmed.startsWith("v=0")) {
+                // Raw SDP offer
+                processRemoteOffer(senderClientId, streamId, key, trimmed)
+                return
+            }
+
+            val json = JSONObject(trimmed)
+            val cmd = json.optString("cmd")
+            val type = json.optString("type").ifEmpty { cmd }.lowercase()
+            val args = json.optJSONObject("args")
+            val hasCandidate = type == "candidate" || cmd == "iceCandidate" ||
+                json.has("candidate") || json.has("iceCandidate") ||
+                (args != null && (args.has("mLine") || args.has("mid") || args.has("candidate") || args.has("sdp")))
+
+            val isOffer = cmd in listOf("joinResponse", "offer", "reconnectOffer") || type == "offer" ||
+                (!hasCandidate && (json.has("offer") || (args != null && args.has("offer")) || (!peerConnections.containsKey(key) && (json.has("sdp") || (args != null && args.has("sdp"))))))
+
+            val isAnswer = cmd == "answer" || type == "answer" ||
+                (!isOffer && !hasCandidate && (json.has("answer") || (args != null && args.has("answer")) || (peerConnections.containsKey(key) && (json.has("sdp") || (args != null && args.has("sdp"))))))
+
+            if (isOffer) {
+                val sdp = args?.optString("offer")?.ifEmpty { null }
+                    ?: args?.optString("sdp")?.ifEmpty { null }
+                    ?: json.optString("offer").ifEmpty { null }
+                    ?: json.optString("sdp")
+                if (!sdp.isNullOrBlank()) {
+                    processRemoteOffer(senderClientId, streamId, key, sdp)
                 }
-                "answer" -> {
-                    val sdp = json.getString("sdp")
+            } else if (isAnswer) {
+                val sdp = args?.optString("answer")?.ifEmpty { null }
+                    ?: args?.optString("sdp")?.ifEmpty { null }
+                    ?: json.optString("answer").ifEmpty { null }
+                    ?: json.optString("sdp")
+                if (!sdp.isNullOrBlank()) {
                     val peerConnection = peerConnections[key] ?: return
-                    val remoteDesc = SessionDescription(SessionDescription.Type.ANSWER, sdp)
+                    val remoteDesc = SessionDescription(SessionDescription.Type.ANSWER, normalizeSdp(sdp))
                     peerConnection.setRemoteDescription(object : SimpleSdpObserver() {
                         override fun onSetSuccess() {
+                            Log.i(TAG, "setRemoteDescription (ANSWER) succeeded for $key")
                             drainPendingIceCandidates(key, peerConnection)
+                        }
+                        override fun onSetFailure(error: String?) {
+                            Log.e(TAG, "setRemoteDescription (ANSWER) failed for $key: $error")
                         }
                     }, remoteDesc)
                 }
-                "candidate" -> {
-                    val candidateSdp = json.getString("candidate")
-                    val sdpMid = json.optString("sdpMid", "video")
-                    val sdpMLineIndex = json.optInt("sdpMLineIndex", 0)
+            } else if (hasCandidate) {
+                val candObj = args ?: json.optJSONObject("candidate") ?: json.optJSONObject("iceCandidate")
+                val candidateSdp = candObj?.optString("sdp")?.ifEmpty { null }
+                    ?: candObj?.optString("candidate")?.ifEmpty { null }
+                    ?: json.optString("candidate").ifEmpty { null }
+                    ?: json.optString("sdp")
+                val sdpMid = candObj?.optString("mid")?.ifEmpty { null }
+                    ?: candObj?.optString("sdpMid")?.ifEmpty { null }
+                    ?: json.optString("sdpMid", "0")
+                val sdpMLineIndex = when {
+                    candObj != null && candObj.has("mLine") -> candObj.optInt("mLine", 0)
+                    candObj != null && candObj.has("sdpMLineIndex") -> candObj.optInt("sdpMLineIndex", 0)
+                    json.has("sdpMLineIndex") -> json.optInt("sdpMLineIndex", 0)
+                    else -> 0
+                }
+                if (!candidateSdp.isNullOrBlank()) {
                     val candidate = IceCandidate(sdpMid, sdpMLineIndex, candidateSdp)
-
                     val peerConnection = peerConnections[key]
                     if (peerConnection != null && peerConnection.remoteDescription != null) {
                         peerConnection.addIceCandidate(candidate)
@@ -325,8 +368,107 @@ class WebRtcManager(
         }
     }
 
+    private fun normalizeSdp(sdp: String): String {
+        return sdp
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\r\n") + "\r\n"
+    }
+
+    fun cleanOfferSdp(sdp: String): String {
+        val lines = sdp.replace("\r\n", "\n").replace("\r", "\n").lines()
+        val keptPayloads = setOf("96", "97", "104", "105") // VP8 (96/97) and H264 baseline (104/105)
+        val result = mutableListOf<String>()
+
+        for (rawLine in lines) {
+            val line = rawLine.trim()
+            if (line.isEmpty()) continue
+            if (line.startsWith("m=video")) {
+                val parts = line.split(" ")
+                if (parts.size > 3) {
+                    val payloads = parts.subList(3, parts.size).filter { it in keptPayloads }
+                    result.add(parts.subList(0, 3).joinToString(" ") + " " + payloads.joinToString(" "))
+                    continue
+                }
+            } else if (line.startsWith("a=rtpmap:") || line.startsWith("a=rtcp-fb:") || line.startsWith("a=fmtp:")) {
+                val colonIdx = line.indexOf(':')
+                val spaceIdx = line.indexOf(' ', colonIdx)
+                val pt = if (spaceIdx != -1) line.substring(colonIdx + 1, spaceIdx) else line.substring(colonIdx + 1)
+                if (pt !in keptPayloads) continue
+            } else if (line.startsWith("a=candidate:")) {
+                continue
+            }
+            result.add(line)
+        }
+        return result.joinToString("\r\n") + "\r\n"
+    }
+
+    fun cleanAnswerSdp(sdp: String): String {
+        val lines = sdp.replace("\r\n", "\n").replace("\r", "\n").lines()
+        val result = mutableListOf<String>()
+
+        for (rawLine in lines) {
+            val line = rawLine.trim()
+            if (line.isEmpty()) continue
+            // Strip inline candidates; candidates are sent via trickle ICE
+            if (line.startsWith("a=candidate:")) continue
+            result.add(line)
+        }
+        return result.joinToString("\r\n") + "\r\n"
+    }
+
+    private fun processRemoteOffer(senderClientId: Int, streamId: String, key: String, sdp: String) {
+        var peerConnection = peerConnections[key]
+        if (peerConnection == null) {
+            peerConnection = createPeerConnection(senderClientId, streamId)
+            if (peerConnection != null) {
+                peerConnections[key] = peerConnection
+                localVideoTrackInternal?.let { track ->
+                    peerConnection.addTrack(track, listOf("ARDAMS"))
+                }
+            }
+        }
+        val remoteDesc = SessionDescription(SessionDescription.Type.OFFER, normalizeSdp(sdp))
+        peerConnection?.setRemoteDescription(object : SimpleSdpObserver() {
+            override fun onSetSuccess() {
+                Log.i(TAG, "setRemoteDescription (OFFER) succeeded for $key, creating answer...")
+                drainPendingIceCandidates(key, peerConnection)
+                val sdpConstraints = MediaConstraints().apply {
+                    mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
+                    mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"))
+                }
+                peerConnection.createAnswer(object : SimpleSdpObserver() {
+                    override fun onCreateSuccess(desc: SessionDescription?) {
+                        desc ?: return
+                        Log.i(TAG, "createAnswer succeeded for $key, setting local description and sending...")
+                        peerConnection.setLocalDescription(SimpleSdpObserver(), desc)
+                        val minifiedAnswer = cleanAnswerSdp(desc.description)
+                        Log.i(TAG, "cleanAnswerSdp: length=${minifiedAnswer.length} for $key")
+                        val answerJson = JSONObject().apply {
+                            put("cmd", "answer")
+                            put("args", JSONObject().apply {
+                                put("answer", minifiedAnswer)
+                            })
+                        }.toString()
+                        sendSignalingCallback(senderClientId, streamId, answerJson)
+                    }
+                    override fun onCreateFailure(error: String?) {
+                        Log.e(TAG, "createAnswer failed for $key: $error")
+                    }
+                }, sdpConstraints)
+            }
+            override fun onSetFailure(error: String?) {
+                Log.e(TAG, "setRemoteDescription (OFFER) failed for $key: $error")
+            }
+        }, remoteDesc)
+    }
+
     private fun drainPendingIceCandidates(key: String, peerConnection: PeerConnection) {
         val candidates = pendingIceCandidates.remove(key) ?: return
+        Log.i(TAG, "Draining ${candidates.size} pending ICE candidates for $key")
         for (c in candidates) {
             peerConnection.addIceCandidate(c)
         }
@@ -336,23 +478,36 @@ class WebRtcManager(
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            iceTransportsType = PeerConnection.IceTransportsType.ALL
+            bundlePolicy = PeerConnection.BundlePolicy.BALANCED
+            rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
         }
 
         return peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
-            override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
+            override fun onSignalingChange(state: PeerConnection.SignalingState?) {
+                Log.i(TAG, "SignalingState for $streamId from $targetClientId: $state")
+            }
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                Log.d(TAG, "ICE Connection State for $streamId: $state")
+                Log.i(TAG, "ICE Connection State for $streamId from $targetClientId: $state")
+            }
+            override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
+                Log.i(TAG, "PeerConnection State for $streamId from $targetClientId: $newState")
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
+                Log.i(TAG, "IceGatheringState for $streamId: $state")
+            }
 
             override fun onIceCandidate(candidate: IceCandidate?) {
                 candidate ?: return
                 val json = JSONObject().apply {
-                    put("type", "candidate")
-                    put("candidate", candidate.sdp)
-                    put("sdpMid", candidate.sdpMid)
-                    put("sdpMLineIndex", candidate.sdpMLineIndex)
+                    put("cmd", "iceCandidate")
+                    put("args", JSONObject().apply {
+                        put("mLine", candidate.sdpMLineIndex)
+                        put("mid", candidate.sdpMid)
+                        put("sdp", candidate.sdp)
+                    })
                 }.toString()
                 sendSignalingCallback(targetClientId, streamId, json)
             }
@@ -362,7 +517,8 @@ class WebRtcManager(
             override fun onTrack(transceiver: RtpTransceiver?) {
                 val track = transceiver?.receiver?.track()
                 if (track is VideoTrack) {
-                    Log.i(TAG, "Received remote VideoTrack via onTrack for $streamId")
+                    track.setEnabled(true)
+                    Log.i(TAG, "Received remote VideoTrack via onTrack for $streamId (enabled=${track.enabled()})")
                     attachRemoteTrack(streamId, track)
                 }
             }
@@ -370,7 +526,8 @@ class WebRtcManager(
             override fun onAddStream(mediaStream: MediaStream?) {
                 val track = mediaStream?.videoTracks?.firstOrNull()
                 if (track != null) {
-                    Log.i(TAG, "Received remote VideoTrack via onAddStream for $streamId")
+                    track.setEnabled(true)
+                    Log.i(TAG, "Received remote VideoTrack via onAddStream for $streamId (enabled=${track.enabled()})")
                     attachRemoteTrack(streamId, track)
                 }
             }

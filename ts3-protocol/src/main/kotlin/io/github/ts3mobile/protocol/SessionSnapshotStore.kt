@@ -64,7 +64,8 @@ internal class SessionSnapshotStore {
                 val clientStreams = streamsByClient[participant.id].orEmpty()
                 participant.copy(
                     hasActiveCamera = clientStreams.any { it.type == StreamType.CAMERA },
-                    hasActiveScreen = clientStreams.any { it.type == StreamType.SCREEN },
+                    hasActiveScreen = clientStreams.any { it.type == StreamType.SCREEN || it.type == StreamType.WINDOW },
+                    hasActiveStream = clientStreams.isNotEmpty(),
                 )
             }.sortedBy { it.nickname.lowercase() },
             activeStreams = streams.values.toList(),

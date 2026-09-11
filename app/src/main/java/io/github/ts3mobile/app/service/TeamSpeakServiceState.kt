@@ -6,10 +6,32 @@ import io.github.ts3mobile.protocol.ConnectionStatus
 import io.github.ts3mobile.protocol.SessionSnapshot
 import io.github.ts3mobile.protocol.Ts3Participant
 
+import io.github.ts3mobile.protocol.StreamType
+
 enum class MicrophoneMode {
     OFF,
     PUSH_TO_TALK,
     CONTINUOUS,
+}
+
+data class WatchedStream(
+    val streamId: String,
+    val clientId: Int,
+    val nickname: String = "",
+    val type: StreamType = StreamType.CAMERA,
+    val name: String = "",
+) {
+    val isScreenOrWindow: Boolean get() = type == StreamType.SCREEN || type == StreamType.WINDOW
+
+    fun displayTitle(): String = when {
+        name.isNotBlank() -> name
+        type == StreamType.SCREEN -> "Tela"
+        type == StreamType.WINDOW -> "Janela"
+        type == StreamType.CAMERA -> "Câmera"
+        else -> "Transmissão"
+    }
+
+    fun displayFullLabel(): String = "Transmissão (${displayTitle()})"
 }
 
 data class ParticipantAudioSettings(
@@ -22,6 +44,12 @@ data class ParticipantAudioSettings(
 
 internal fun Ts3Participant.audioControlKey(): String =
     uniqueIdentifier.ifBlank { "session:$id" }
+
+data class StreamViewer(
+    val clientId: Int,
+    val nickname: String,
+    val streamId: String,
+)
 
 data class TeamSpeakServiceState(
     val status: ConnectionStatus = ConnectionStatus(),
@@ -42,4 +70,8 @@ data class TeamSpeakServiceState(
     val activeBroadcastStreamId: String? = null,
     val watchingStreamId: String? = null,
     val watchingStreamClientId: Int? = null,
+    val watchingStreams: List<WatchedStream> = emptyList(),
+    val autoAcceptStreamViewers: Boolean = true,
+    val pendingViewerRequests: List<StreamViewer> = emptyList(),
+    val activeViewers: List<StreamViewer> = emptyList(),
 )

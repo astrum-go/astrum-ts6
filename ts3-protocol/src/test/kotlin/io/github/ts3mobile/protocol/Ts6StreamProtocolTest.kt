@@ -14,16 +14,23 @@ class Ts6StreamProtocolTest {
 
     @Test
     fun streamTypeParsing() {
-        assertEquals(StreamType.CAMERA, StreamType.fromValue("3"))
+        assertEquals(StreamType.CAMERA, StreamType.fromValue("1"))
+        assertEquals(StreamType.WINDOW, StreamType.fromValue("3"))
         assertEquals(StreamType.SCREEN, StreamType.fromValue("2"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue("cameras"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue("camera"))
         assertEquals(StreamType.SCREEN, StreamType.fromValue("screens"))
         assertEquals(StreamType.SCREEN, StreamType.fromValue("screen"))
+        assertEquals(StreamType.SCREEN, StreamType.fromValue(null, "Tela 0"))
+        assertEquals(StreamType.SCREEN, StreamType.fromValue(null, "Screen 1"))
+        assertEquals(StreamType.WINDOW, StreamType.fromValue(null, "DevTools - tsui://default/index.html#/dashboard"))
+        assertEquals(StreamType.WINDOW, StreamType.fromValue("window"))
+        assertEquals(StreamType.CAMERA, StreamType.fromValue(null, "Integrated Camera"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue("unknown"))
         assertEquals(StreamType.CAMERA, StreamType.fromValue(null))
-        assertEquals(3, StreamType.CAMERA.value)
+        assertEquals(1, StreamType.CAMERA.value)
         assertEquals(2, StreamType.SCREEN.value)
+        assertEquals(3, StreamType.WINDOW.value)
     }
 
     @Test

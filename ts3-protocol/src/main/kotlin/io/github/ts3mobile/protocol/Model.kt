@@ -46,14 +46,49 @@ data class Ts3Channel(
 
 enum class StreamType(val value: Int) {
     UNKNOWN(0),
+    CAMERA(1),
     SCREEN(2),
-    CAMERA(3);
+    WINDOW(3);
 
     companion object {
-        fun fromValue(value: String?): StreamType = when (value?.lowercase()?.trim()) {
-            "2", "screen", "screens" -> SCREEN
-            "3", "1", "camera", "cameras" -> CAMERA
-            else -> CAMERA
+        fun fromValue(value: String?, name: String? = null): StreamType {
+            val n = name?.lowercase()?.trim().orEmpty()
+            if (n.contains("screen") ||
+                n.contains("tela") ||
+                n.contains("display") ||
+                n.contains("monitor") ||
+                n.contains("desktop")
+            ) {
+                return SCREEN
+            }
+            if (n.contains("window") ||
+                n.contains("janela") ||
+                n.contains("devtools") ||
+                n.contains("chrome") ||
+                n.contains("edge") ||
+                n.contains("firefox") ||
+                n.contains("discord") ||
+                n.contains("app")
+            ) {
+                return WINDOW
+            }
+            if (n.contains("cam") ||
+                n.contains("camera") ||
+                n.contains("câmera") ||
+                n.contains("webcam") ||
+                n.contains("droidcam") ||
+                n.contains("iriun") ||
+                n.contains("obs")
+            ) {
+                return CAMERA
+            }
+
+            return when (value?.lowercase()?.trim()) {
+                "3", "window", "janela", "app" -> WINDOW
+                "2", "screen", "screens", "desktop" -> SCREEN
+                "1", "camera", "cameras", "cam", "webcam" -> CAMERA
+                else -> if (n.isNotEmpty()) WINDOW else CAMERA
+            }
         }
     }
 }
@@ -67,7 +102,20 @@ data class Ts6StreamInfo(
     val fps: Int = 30,
     val bitrate: Int = 0,
     val description: String = "",
-)
+) {
+    val isScreenOrWindow: Boolean get() = type == StreamType.SCREEN || type == StreamType.WINDOW
+    val isCamera: Boolean get() = type == StreamType.CAMERA
+
+    fun displayTitle(): String = when {
+        description.isNotBlank() -> description
+        type == StreamType.SCREEN -> "Tela"
+        type == StreamType.WINDOW -> "Janela"
+        type == StreamType.CAMERA -> "Câmera"
+        else -> "Transmissão"
+    }
+
+    fun displayFullLabel(): String = "Transmissão: ${displayTitle()}"
+}
 
 data class Ts6StreamSignaling(
     val streamId: String,
@@ -85,6 +133,7 @@ data class Ts3Participant(
     val uniqueIdentifier: String = "",
     val hasActiveCamera: Boolean = false,
     val hasActiveScreen: Boolean = false,
+    val hasActiveStream: Boolean = false,
 )
 
 data class SessionSnapshot(

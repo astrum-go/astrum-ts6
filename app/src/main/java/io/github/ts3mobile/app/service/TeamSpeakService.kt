@@ -102,6 +102,7 @@ class TeamSpeakService : Service() {
     private var connectionJob: Job? = null
     private var reconnectJob: Job? = null
     private var stableConnectionJob: Job? = null
+    private val queriedStreamClientIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -126,15 +127,27 @@ class TeamSpeakService : Service() {
         audioPlayer = OpusAudioPlayer(applicationContext)
         microphone = OpusMicrophoneCapture(applicationContext, ::onMicrophoneFailure)
         audioRouter = AudioDeviceRouter(applicationContext, ::onAudioRoutingChanged)
-        webRtcManager = WebRtcManager(applicationContext) { targetClientId, streamId, payload ->
-            serviceScope.launch {
-                try {
-                    session?.sendStreamSignaling(targetClientId, streamId, payload)
-                } catch (error: Throwable) {
-                    System.err.println("TS3_VIDEO: signaling send failed: ${error.message}")
+        webRtcManager = WebRtcManager(
+            context = applicationContext,
+            sendSignalingCallback = { targetClientId, streamId, payload ->
+                serviceScope.launch {
+                    try {
+                        session?.sendStreamSignaling(targetClientId, streamId, payload)
+                    } catch (error: Throwable) {
+                        System.err.println("TS3_VIDEO: signaling send failed: ${error.message}")
+                    }
                 }
-            }
-        }
+            },
+            respondJoinStreamCallback = { targetClientId, streamId, offer ->
+                serviceScope.launch {
+                    try {
+                        session?.respondJoinStreamRequest(targetClientId, streamId, allow = true, offer = offer)
+                    } catch (error: Throwable) {
+                        System.err.println("TS3_VIDEO: respondJoinStreamRequest failed: ${error.message}")
+                    }
+                }
+            },
+        )
         serviceScope.launch {
             webRtcManager.isFrontCamera.collect { isFront ->
                 mutableState.update { it.copy(isFrontCamera = isFront) }
@@ -413,6 +426,15 @@ class TeamSpeakService : Service() {
                 }
             }
             updateNotification()
+
+            val ownClientId = snapshot.ownClientId
+            val currentParticipantIds = snapshot.participants.map { it.id }.toSet()
+            queriedStreamClientIds.retainAll(currentParticipantIds)
+            for (p in snapshot.participants) {
+                if (p.id != ownClientId && queriedStreamClientIds.add(p.id)) {
+                    session?.requestStreamInfo(p.id)
+                }
+            }
         }
 
         override fun onVoiceFrame(frame: VoiceFrame) {
@@ -421,12 +443,22 @@ class TeamSpeakService : Service() {
 
         override fun onStreamStarted(stream: Ts6StreamInfo) {
             if (!isListenerActive(this)) return
+            val ownClientId = mutableState.value.snapshot.ownClientId
+            if (ownClientId != null && stream.clientId == ownClientId) {
+                webRtcManager.updateBroadcastStreamId(stream.streamId)
+                mutableState.update {
+                    it.copy(
+                        isBroadcastingCamera = true,
+                        activeBroadcastStreamId = stream.streamId,
+                    )
+                }
+            }
         }
 
         override fun onStreamStopped(streamId: String, clientId: Int) {
             if (!isListenerActive(this)) return
-            if (mutableState.value.watchingStreamId == streamId) {
-                stopWatchingStream()
+            if (mutableState.value.watchingStreams.any { it.streamId == streamId } || mutableState.value.watchingStreamId == streamId) {
+                stopWatchingStream(streamId)
             }
         }
 
@@ -437,8 +469,54 @@ class TeamSpeakService : Service() {
 
         override fun onStreamJoinRequested(streamId: String, remoteClientId: Int) {
             if (!isListenerActive(this)) return
-            session?.respondJoinStreamRequest(remoteClientId, streamId, allow = true)
-            webRtcManager.handleJoinRequest(remoteClientId, streamId)
+            if (!webRtcManager.isBroadcasting.value) {
+                serviceScope.launch {
+                    sessionMutex.withLock {
+                        runCatching {
+                            session?.respondJoinStreamRequest(remoteClientId, streamId, allow = false)
+                        }
+                    }
+                }
+                return
+            }
+            val nickname = mutableState.value.snapshot.participants
+                .firstOrNull { it.id == remoteClientId }?.nickname ?: "Cliente $remoteClientId"
+            val viewer = StreamViewer(remoteClientId, nickname, streamId)
+
+            if (mutableState.value.autoAcceptStreamViewers) {
+                acceptViewerRequest(viewer)
+            } else {
+                mutableState.update { current ->
+                    if (current.pendingViewerRequests.none { it.clientId == remoteClientId }) {
+                        current.copy(pendingViewerRequests = current.pendingViewerRequests + viewer)
+                    } else current
+                }
+            }
+        }
+
+        override fun onStreamClientJoined(streamId: String, clientId: Int) {
+            if (!isListenerActive(this)) return
+            val nickname = mutableState.value.snapshot.participants
+                .firstOrNull { it.id == clientId }?.nickname ?: "Cliente $clientId"
+            val viewer = StreamViewer(clientId, nickname, streamId)
+            mutableState.update { current ->
+                if (current.activeViewers.none { it.clientId == clientId }) {
+                    current.copy(
+                        activeViewers = current.activeViewers + viewer,
+                        pendingViewerRequests = current.pendingViewerRequests.filter { it.clientId != clientId },
+                    )
+                } else current
+            }
+        }
+
+        override fun onStreamClientLeft(streamId: String, clientId: Int) {
+            if (!isListenerActive(this)) return
+            mutableState.update { current ->
+                current.copy(
+                    activeViewers = current.activeViewers.filter { it.clientId != clientId },
+                    pendingViewerRequests = current.pendingViewerRequests.filter { it.clientId != clientId },
+                )
+            }
         }
     }
 
@@ -461,6 +539,7 @@ class TeamSpeakService : Service() {
         updateNotification()
         reconcileMicrophone()
         restoreLastChannelIfNeeded(listener)
+        queriedStreamClientIds.clear()
     }
 
     private fun onEstablishedSessionEnded(
@@ -1036,7 +1115,44 @@ class TeamSpeakService : Service() {
             it.copy(
                 isBroadcastingCamera = false,
                 activeBroadcastStreamId = null,
+                activeViewers = emptyList(),
+                pendingViewerRequests = emptyList(),
             )
+        }
+    }
+
+    fun acceptViewerRequest(viewer: StreamViewer) {
+        mutableState.update { current ->
+            current.copy(
+                pendingViewerRequests = current.pendingViewerRequests.filter { it.clientId != viewer.clientId },
+                activeViewers = if (current.activeViewers.any { it.clientId == viewer.clientId }) {
+                    current.activeViewers
+                } else {
+                    current.activeViewers + viewer
+                },
+            )
+        }
+        webRtcManager.handleJoinRequest(viewer.clientId, viewer.streamId)
+    }
+
+    fun rejectViewerRequest(viewer: StreamViewer) {
+        mutableState.update { current ->
+            current.copy(
+                pendingViewerRequests = current.pendingViewerRequests.filter { it.clientId != viewer.clientId },
+            )
+        }
+        serviceScope.launch {
+            sessionMutex.withLock {
+                runCatching {
+                    session?.respondJoinStreamRequest(viewer.clientId, viewer.streamId, allow = false)
+                }
+            }
+        }
+    }
+
+    fun toggleAutoAcceptViewers() {
+        mutableState.update { current ->
+            current.copy(autoAcceptStreamViewers = !current.autoAcceptStreamViewers)
         }
     }
 
@@ -1054,10 +1170,28 @@ class TeamSpeakService : Service() {
                     session?.requestJoinStream(remoteClientId, streamId)
                 }
                 webRtcManager.watchStream(remoteClientId, streamId)
-                mutableState.update {
-                    it.copy(
+                val streamer = mutableState.value.snapshot.participants.firstOrNull { it.id == remoteClientId }
+                val streamInfo = mutableState.value.snapshot.activeStreams.firstOrNull { it.streamId == streamId }
+                val watched = WatchedStream(
+                    streamId = streamId,
+                    clientId = remoteClientId,
+                    nickname = streamer?.nickname ?: "Vídeo",
+                    type = streamInfo?.type ?: StreamType.CAMERA,
+                    name = streamInfo?.description.orEmpty().ifEmpty {
+                        when (streamInfo?.type) {
+                            StreamType.SCREEN -> "Tela"
+                            StreamType.WINDOW -> "Janela"
+                            else -> "Câmera"
+                        }
+                    },
+                )
+                mutableState.update { current ->
+                    val filtered = current.watchingStreams.filter { it.streamId != streamId }
+                    val updated = (filtered + watched).takeLast(4)
+                    current.copy(
                         watchingStreamId = streamId,
                         watchingStreamClientId = remoteClientId,
+                        watchingStreams = updated,
                     )
                 }
             } catch (error: Throwable) {
@@ -1066,13 +1200,24 @@ class TeamSpeakService : Service() {
         }
     }
 
-    private fun stopWatchingStream() {
-        val streamId = mutableState.value.watchingStreamId ?: return
-        webRtcManager.stopWatchingStream(streamId)
-        mutableState.update {
-            it.copy(
-                watchingStreamId = null,
-                watchingStreamClientId = null,
+    private fun stopWatchingStream(streamId: String? = null) {
+        val targetId = streamId ?: mutableState.value.watchingStreamId ?: return
+        val item = mutableState.value.watchingStreams.firstOrNull { it.streamId == targetId }
+        val clientId = item?.clientId ?: mutableState.value.watchingStreamClientId
+        if (clientId != null) {
+            serviceScope.launch {
+                sessionMutex.withLock {
+                    runCatching { session?.leaveStream(clientId, targetId) }
+                }
+            }
+        }
+        webRtcManager.stopWatchingStream(targetId)
+        mutableState.update { current ->
+            val updated = current.watchingStreams.filter { it.streamId != targetId }
+            current.copy(
+                watchingStreamId = updated.lastOrNull()?.streamId,
+                watchingStreamClientId = updated.lastOrNull()?.clientId,
+                watchingStreams = updated,
             )
         }
     }
@@ -1137,8 +1282,20 @@ class TeamSpeakService : Service() {
             this@TeamSpeakService.watchStream(remoteClientId, streamId)
         }
 
-        fun stopWatchingStream() {
-            this@TeamSpeakService.stopWatchingStream()
+        fun stopWatchingStream(streamId: String? = null) {
+            this@TeamSpeakService.stopWatchingStream(streamId)
+        }
+
+        fun acceptViewerRequest(viewer: StreamViewer) {
+            this@TeamSpeakService.acceptViewerRequest(viewer)
+        }
+
+        fun rejectViewerRequest(viewer: StreamViewer) {
+            this@TeamSpeakService.rejectViewerRequest(viewer)
+        }
+
+        fun toggleAutoAcceptViewers() {
+            this@TeamSpeakService.toggleAutoAcceptViewers()
         }
 
         fun reportMicrophonePermissionDenied() {
