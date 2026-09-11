@@ -63,53 +63,16 @@ jobs:
       - name: Generate Release Notes
         run: |
           cat << 'EOF' > RELEASE_NOTES.md
-          # 🚀 Astrum TS6 ${{ env.TAG }}
+          # Astrum TS6 ${{ env.TAG }}
 
-          Bem-vindo ao lançamento oficial do **Astrum TS6**! Um cliente Android de código aberto, moderno e de alto desempenho para **TeamSpeak 6**, trazendo recursos de comunicação por voz, vídeo e transmissão de tela para a palma da sua mão.
+          Cliente Android de código aberto para TeamSpeak 6 com suporte a voz de baixa latência, transmissão de vídeo e compartilhamento de tela com áudio interno.
 
-          ---
+          ### Funcionalidades
 
-          ### 💡 A Motivação por Trás do Projeto
-          Este aplicativo foi desenvolvido em resposta aos bloqueios e instabilidades recentes de acesso ao Discord no Brasil. A necessidade de uma alternativa confiável, privada e autônoma para assistir a vídeos juntos, conversar e transmitir gameplays do celular (especialmente para jogar com minha namorada de forma legítima e estável) impulsionou a evolução desta plataforma utilizando a infraestrutura robusta do TeamSpeak 6.
-
-          ---
-
-          ### ✨ Principais Recursos desta Versão
-          - 📹 **Transmissão de Câmera WebRTC para TS6**:
-            - Suporte total à sinalização de vídeo do TeamSpeak 6.
-            - Transmissão fluida da câmera traseira e frontal com orientação física dinâmica correta em retrato e paisagem.
-            - Visualização de múltiplos participantes na chamada com modo tela cheia e gestos intuitivos de pinça (*pinch-to-zoom*).
-          - 📱 **Compartilhamento de Tela com Áudio Interno do Celular**:
-            - Transmissão em tempo real da tela do seu Android via `MediaProjection`.
-            - Captura e mixagem nativa de áudio do sistema (jogos, músicas e vídeos no Android 10+ via `AudioPlaybackCapture`).
-            - Presets otimizados de resolução, FPS e bitrate para economizar bateria e largura de banda.
-          - 🎙️ **Astrum Clarity (Pipeline Neural de Supressão de Ruído)**:
-            - Filtro de ruídos por inteligência artificial com DeepFilterNet e RNNoise v0.2.
-            - Supressor de transientes para teclado e impactos.
-            - VoiceGate adaptativo com controle individual de volume por usuário na sala.
-          - 🎨 **Interface Moderna & Ergonomia Redesenhada**:
-            - Construído inteiramente com **Jetpack Compose** e tema escuro refinado.
-            - Gerenciador de servidores favoritos com conexão em 1 toque.
-            - Identidade visual e novo ícone exclusivo da Astrum.
-
-          ---
-
-          ### 🏛️ Origens e Créditos
-          - Agradecimento especial ao projeto [monet4070/ts3-mobile](https://github.com/monet4070/ts3-mobile), cuja arquitetura Android inicial serviu de fundação sobre a qual o Astrum TS6 foi expandido.
-          - Protocolo TeamSpeak desenvolvido por [Manevolent/ts3j](https://github.com/Manevolent/ts3j).
-
-          ---
-
-          ### 📥 Como Instalar no Android
-          1. Baixe o arquivo **`${{ env.APK_NAME }}`** listado na seção de *Assets* abaixo.
-          2. No seu dispositivo Android, abra o arquivo baixado.
-          3. Caso solicitado, permita a instalação a partir do seu navegador ou gerenciador de arquivos (*Fontes desconhecidas*).
-          4. Abra o **Astrum TS6**, adicione seu servidor favorito e aproveite!
-
-          ---
-
-          ### ⚖️ Licença
-          Distribuído sob a licença **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+          - **Vídeo e Câmera WebRTC**: Transmissão em tempo real da câmera e visualização de streams com tela cheia e gestos de zoom.
+          - **Compartilhamento de Tela**: Transmissão da tela com captura nativa do áudio do sistema (Android 10+).
+          - **Supressão de Ruído Neural (Astrum Clarity)**: Filtragem de ruídos por inteligência artificial e controle de volume por usuário.
+          - **Interface Moderna**: Interface em Jetpack Compose com tema escuro e lista de servidores favoritos.
           EOF
 
       - name: Publish GitHub Release
