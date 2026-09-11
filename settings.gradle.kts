@@ -15,8 +15,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Ts3Mobile"
+rootProject.name = "ts6-mobile-community"
 include(":app")
-include(":ts3-protocol")
+include(":ts6-protocol")
 include(":audio-opus")
 

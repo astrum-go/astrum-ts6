@@ -28,7 +28,7 @@ std::string opus_error(const char* operation, int code) {
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeCreate(
+Java_br_app_astrum_ts6_audio_opus_NativeOpusDecoder_nativeCreate(
         JNIEnv* env,
         jclass,
         jint sample_rate,
@@ -43,7 +43,7 @@ Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeCreate(
 }
 
 extern "C" JNIEXPORT jshortArray JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeDecode(
+Java_br_app_astrum_ts6_audio_opus_NativeOpusDecoder_nativeDecode(
         JNIEnv* env,
         jclass,
         jlong handle,
@@ -93,7 +93,7 @@ Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeDecode(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeReset(
+Java_br_app_astrum_ts6_audio_opus_NativeOpusDecoder_nativeReset(
         JNIEnv* env,
         jclass,
         jlong handle) {
@@ -106,7 +106,7 @@ Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeReset(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeDestroy(
+Java_br_app_astrum_ts6_audio_opus_NativeOpusDecoder_nativeDestroy(
         JNIEnv*,
         jclass,
         jlong handle) {
@@ -114,7 +114,7 @@ Java_io_github_ts3mobile_audio_opus_NativeOpusDecoder_nativeDestroy(
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeOpusEncoder_nativeCreate(
+Java_br_app_astrum_ts6_audio_opus_NativeOpusEncoder_nativeCreate(
         JNIEnv* env,
         jclass,
         jint sample_rate,
@@ -147,7 +147,7 @@ Java_io_github_ts3mobile_audio_opus_NativeOpusEncoder_nativeCreate(
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeOpusEncoder_nativeEncode(
+Java_br_app_astrum_ts6_audio_opus_NativeOpusEncoder_nativeEncode(
         JNIEnv* env,
         jclass,
         jlong handle,
@@ -194,7 +194,7 @@ Java_io_github_ts3mobile_audio_opus_NativeOpusEncoder_nativeEncode(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeOpusEncoder_nativeDestroy(
+Java_br_app_astrum_ts6_audio_opus_NativeOpusEncoder_nativeDestroy(
         JNIEnv*,
         jclass,
         jlong handle) {

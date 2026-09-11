@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.ts3mobile.app"
+    namespace = "br.app.astrum.ts6.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.ts3mobile.app"
+        applicationId = "br.app.astrum.ts6"
         minSdk = 26
         targetSdk = 35
         versionCode = 9
@@ -55,7 +55,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":ts3-protocol"))
+    implementation(project(":ts6-protocol"))
     implementation(project(":audio-opus"))
     implementation(libs.stream.webrtc)
 

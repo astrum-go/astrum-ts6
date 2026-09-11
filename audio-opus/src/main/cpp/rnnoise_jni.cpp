@@ -35,7 +35,7 @@ NativeRnNoiseContext* context_from_handle(JNIEnv* env, jlong handle) {
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeRnNoiseProcessor_nativeCreate(
+Java_br_app_astrum_ts6_audio_opus_NativeRnNoiseProcessor_nativeCreate(
         JNIEnv* env,
         jclass) {
     if (rnnoise_get_frame_size() != 480) {
@@ -56,7 +56,7 @@ Java_io_github_ts3mobile_audio_opus_NativeRnNoiseProcessor_nativeCreate(
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeRnNoiseProcessor_nativeProcessInPlace(
+Java_br_app_astrum_ts6_audio_opus_NativeRnNoiseProcessor_nativeProcessInPlace(
         JNIEnv* env,
         jclass,
         jlong handle,
@@ -99,7 +99,7 @@ Java_io_github_ts3mobile_audio_opus_NativeRnNoiseProcessor_nativeProcessInPlace(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeRnNoiseProcessor_nativeDestroy(
+Java_br_app_astrum_ts6_audio_opus_NativeRnNoiseProcessor_nativeDestroy(
         JNIEnv*,
         jclass,
         jlong handle) {

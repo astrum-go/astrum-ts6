@@ -1,8 +1,8 @@
-# TS3 Mobile
+# TS6 Mobile Community
 
-TS3 Mobile is an experimental, open-source Android client for TeamSpeak 3,
+TS6 Mobile Community is an open-source Android client for TeamSpeak,
 built on the full client protocol provided by
-[Manevolent/ts3j](https://github.com/Manevolent/ts3j).
+[Manevolent/ts3j](https://github.com/Manevolent/ts3j) with WebRTC video and screen sharing support for TeamSpeak 6.
 
 This is an unofficial community project. It is not affiliated with, endorsed
 by, or sponsored by TeamSpeak Systems GmbH. TeamSpeak and related names and
@@ -53,7 +53,7 @@ See [PRIVACY.md](PRIVACY.md) for the complete data-handling statement.
 ## Modules
 
 - `app`: Compose UI, Android lifecycle, foreground service, and identity vault
-- `ts3-protocol`: JVM-only ts3j facade, models, session generation, and channel ordering
+- `ts6-protocol`: JVM-only ts3j facade, models, session generation, and channel ordering
 - `audio-opus`: JNI libopus codec, capture, denoising, jitter buffering, mixing,
   and Android audio I/O
 

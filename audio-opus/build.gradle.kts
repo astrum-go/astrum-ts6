@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "io.github.ts3mobile.audio.opus"
+    namespace = "br.app.astrum.ts6.audio.opus"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
@@ -42,7 +42,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":ts3-protocol"))
+    implementation(project(":ts6-protocol"))
     implementation(libs.opus)
     implementation(libs.deepfilternet)
 

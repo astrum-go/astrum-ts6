@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve TS3 Mobile. This is an experimental client, so
+Thanks for helping improve TS6 Mobile Community. This is an open-source client, so
 changes should preserve connection stability, bounded audio latency, and user
 control over microphone transmission.
 
@@ -19,7 +19,7 @@ Use JDK 17 and the Android/NDK versions listed in the README. Before submitting
 a pull request, run:
 
 ```powershell
-.\gradlew.bat :ts3-protocol:test :audio-opus:testDebugUnitTest :audio-opus:lintDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+.\gradlew.bat :ts6-protocol:test :audio-opus:testDebugUnitTest :audio-opus:lintDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
 Changes to native audio or device interaction should also be tested on a

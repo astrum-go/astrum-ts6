@@ -24,7 +24,7 @@ ts3audio::TransientSuppressor* suppressor_from_handle(JNIEnv* env, jlong handle)
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeTransientSuppressor_nativeCreate(
+Java_br_app_astrum_ts6_audio_opus_NativeTransientSuppressor_nativeCreate(
         JNIEnv* env,
         jclass,
         jint sample_rate) {
@@ -37,7 +37,7 @@ Java_io_github_ts3mobile_audio_opus_NativeTransientSuppressor_nativeCreate(
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeTransientSuppressor_nativeProcessInPlace(
+Java_br_app_astrum_ts6_audio_opus_NativeTransientSuppressor_nativeProcessInPlace(
         JNIEnv* env,
         jclass,
         jlong handle,
@@ -63,7 +63,7 @@ Java_io_github_ts3mobile_audio_opus_NativeTransientSuppressor_nativeProcessInPla
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeTransientSuppressor_nativeReset(
+Java_br_app_astrum_ts6_audio_opus_NativeTransientSuppressor_nativeReset(
         JNIEnv* env,
         jclass,
         jlong handle) {
@@ -74,7 +74,7 @@ Java_io_github_ts3mobile_audio_opus_NativeTransientSuppressor_nativeReset(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_ts3mobile_audio_opus_NativeTransientSuppressor_nativeDestroy(
+Java_br_app_astrum_ts6_audio_opus_NativeTransientSuppressor_nativeDestroy(
         JNIEnv*,
         jclass,
         jlong handle) {
