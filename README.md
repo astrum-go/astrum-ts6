@@ -10,6 +10,14 @@ This is an unofficial community project. It is not affiliated with, endorsed
 by, or sponsored by TeamSpeak Systems GmbH. TeamSpeak and related names and
 marks are the property of their respective owners.
 
+---
+
+## 💡 Project Motivation
+
+This project was developed in response to blocks and connectivity disruptions affecting Discord in Brazil, which prompted the search for reliable, independent communication alternatives. The primary goal was to create a legitimate, high-performance mobile solution for screen sharing and video streaming — whether to watch media together or broadcast game sessions with my girlfriend — using the decentralized and self-hostable infrastructure of TeamSpeak 6.
+
+---
+
 ## Current milestone: M8 channel roster
 
 The current build provides:

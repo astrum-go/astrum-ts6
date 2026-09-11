@@ -1,10 +1,16 @@
-﻿🌐 [English](README.md) · [Português (Brasil)](README.pt-BR.md)
+🌐 [English](README.md) · [Português (Brasil)](README.pt-BR.md)
 
 # TS6 Mobile Community
 
 O **TS6 Mobile Community** é um cliente Android de código aberto para TeamSpeak, construído sobre o protocolo de cliente completo fornecido pelo [Manevolent/ts3j](https://github.com/Manevolent/ts3j), com suporte a chamadas de voz e transmissões de vídeo e tela WebRTC compatíveis com o TeamSpeak 6.
 
 Este é um projeto comunitário não oficial. Não é afiliado, endossado ou patrocinado pela TeamSpeak Systems GmbH. TeamSpeak e nomes/marcas relacionados são de propriedade de seus respectivos titulares.
+
+---
+
+## 💡 Motivação do Projeto
+
+Este projeto foi desenvolvido em decorrência do bloqueio e das instabilidades de acesso ao Discord no Brasil, que forçaram a busca por alternativas independentes, privadas e robustas para comunicação em tempo real. O objetivo principal foi viabilizar uma forma legítima e eficiente de compartilhar tela e vídeo pelo celular — seja para assistir a conteúdos juntos ou para transmitir partidas de jogos com minha namorada —, aproveitando a infraestrutura descentralizada e estável do TeamSpeak 6.
 
 ---
 
