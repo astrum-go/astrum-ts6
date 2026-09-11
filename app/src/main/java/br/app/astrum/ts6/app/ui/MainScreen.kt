@@ -314,7 +314,7 @@ fun MainScreen(
                                 .clip(RoundedCornerShape(8.dp)),
                         )
                         Text(
-                            text = stringResource(R.string.app_name),
+                            text = "Astrum TS6",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
