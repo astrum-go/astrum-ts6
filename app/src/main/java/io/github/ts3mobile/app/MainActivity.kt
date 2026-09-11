@@ -33,6 +33,7 @@ import io.github.ts3mobile.audio.opus.SuppressionMode
 import io.github.ts3mobile.app.ui.MainScreen
 import io.github.ts3mobile.app.ui.theme.Ts3MobileTheme
 import io.github.ts3mobile.protocol.ServerConfig
+import io.github.ts3mobile.protocol.StreamPreset
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
@@ -44,6 +45,9 @@ class MainActivity : ComponentActivity() {
     private var pushToTalkPressed = false
     private var isLandscape by mutableStateOf(false)
     private var isInPip by mutableStateOf(false)
+    private var pendingCameraPreset: StreamPreset = StreamPreset.BALANCED_720P_30
+    private var pendingScreenPreset: StreamPreset = StreamPreset.BALANCED_720P_30
+    private var pendingScreenAudio: Boolean = false
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -71,15 +75,16 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            serviceBinder?.startCameraBroadcast()
+            serviceBinder?.startCameraBroadcast(pendingCameraPreset)
         }
     }
 
     private val screenCapturePermission = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        if (result.resultCode == RESULT_OK && result.data != null) {
-            serviceBinder?.startScreenBroadcast(result.data!!)
+        val data = result.data
+        if (result.resultCode == RESULT_OK && data != null) {
+            serviceBinder?.startScreenBroadcast(data, pendingScreenPreset, pendingScreenAudio)
         }
     }
 
@@ -168,24 +173,25 @@ class MainActivity : ComponentActivity() {
                         serviceBinder?.joinChannel(channelId, password)
                     },
                     webRtcManager = serviceBinder?.webRtc,
-                    onToggleCameraBroadcast = {
-                        if (serviceState.isBroadcastingCamera) {
-                            serviceBinder?.stopCameraBroadcast()
+                    onStartCameraBroadcast = { preset ->
+                        pendingCameraPreset = preset
+                        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                            serviceBinder?.startCameraBroadcast(preset)
                         } else {
-                            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                                serviceBinder?.startCameraBroadcast()
-                            } else {
-                                cameraPermission.launch(Manifest.permission.CAMERA)
-                            }
+                            cameraPermission.launch(Manifest.permission.CAMERA)
                         }
                     },
-                    onToggleScreenBroadcast = {
-                        if (serviceState.isBroadcastingScreen) {
-                            serviceBinder?.stopScreenBroadcast()
-                        } else {
-                            val mediaProjectionManager = getSystemService(MediaProjectionManager::class.java)
-                            screenCapturePermission.launch(mediaProjectionManager.createScreenCaptureIntent())
-                        }
+                    onStopCameraBroadcast = {
+                        serviceBinder?.stopCameraBroadcast()
+                    },
+                    onStartScreenBroadcast = { preset, shareAudio ->
+                        pendingScreenPreset = preset
+                        pendingScreenAudio = shareAudio
+                        val mediaProjectionManager = getSystemService(MediaProjectionManager::class.java)
+                        screenCapturePermission.launch(mediaProjectionManager.createScreenCaptureIntent())
+                    },
+                    onStopScreenBroadcast = {
+                        serviceBinder?.stopScreenBroadcast()
                     },
                     onSwitchCamera = {
                         serviceBinder?.switchCamera()

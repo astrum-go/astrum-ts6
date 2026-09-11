@@ -46,6 +46,12 @@ class OpusMicrophoneCapture(
     @Volatile
     private var worker: Thread? = null
 
+    @Volatile
+    var systemAudioCapture: SystemAudioCapture? = null
+
+    @Volatile
+    var isVoiceTransmitting: Boolean = true
+
     val isCapturing: Boolean
         get() = control?.running?.get() == true
 
@@ -252,6 +258,20 @@ class OpusMicrophoneCapture(
                 if (read == 0) continue
                 denoiserOffset += read
                 if (denoiserOffset < denoiserPcm.size) continue
+
+                val sysCap = systemAudioCapture
+                if (sysCap != null) {
+                    val sysSamples = ShortArray(denoiserPcm.size)
+                    val sysRead = sysCap.readSamples(sysSamples, 0, sysSamples.size)
+                    val voiceAllowed = isVoiceTransmitting
+                    for (i in denoiserPcm.indices) {
+                        val micVal = if (voiceAllowed) denoiserPcm[i].toInt() else 0
+                        val sysVal = if (i < sysRead) sysSamples[i].toInt() else 0
+                        denoiserPcm[i] = (micVal + sysVal).coerceIn(-32768, 32767).toShort()
+                    }
+                } else if (!isVoiceTransmitting) {
+                    denoiserPcm.fill(0)
+                }
 
                 var rawNonZero = false
                 denoiserPcm.forEach { sample ->

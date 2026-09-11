@@ -17,7 +17,14 @@ interface Ts3SessionClient : AutoCloseable {
     fun setVoiceSource(source: EncodedVoiceSource?)
     fun joinChannel(channelId: Int, password: String = "")
     fun disconnect(reason: String = "Client disconnected")
-    fun startStream(type: StreamType = StreamType.CAMERA, width: Int = 1280, height: Int = 720, fps: Int = 30): String
+    fun startStream(
+        type: StreamType = StreamType.CAMERA,
+        width: Int = 1280,
+        height: Int = 720,
+        fps: Int = 30,
+        bitrateKbps: Int = 2000,
+        hasAudio: Boolean = false,
+    ): String
     fun stopStream(streamId: String)
     fun requestJoinStream(targetClientId: Int, streamId: String)
     fun leaveStream(targetClientId: Int, streamId: String)

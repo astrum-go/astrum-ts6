@@ -2,6 +2,7 @@ package io.github.ts3mobile.app.video
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Matrix
 import android.media.projection.MediaProjection
 import android.util.Log
 import io.github.ts3mobile.protocol.StreamType
@@ -20,24 +21,31 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.Camera2Enumerator
 import org.webrtc.CameraVideoCapturer
+import org.webrtc.CapturerObserver
 import org.webrtc.DataChannel
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
+import org.webrtc.JavaI420Buffer
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RendererCommon
 import org.webrtc.RtpReceiver
 import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoCapturer
+import org.webrtc.VideoFrame
+import org.webrtc.VideoProcessor
+import org.webrtc.VideoSink
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+import org.webrtc.YuvHelper
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -130,6 +138,9 @@ class WebRtcManager(
             surfaceTextureHelper = SurfaceTextureHelper.create("Ts6CameraThread", eglBase.eglBaseContext)
             videoSource = peerConnectionFactory.createVideoSource(false)
 
+            val rotationProcessor = RotationVideoProcessor()
+            videoSource?.setVideoProcessor(rotationProcessor)
+
             val capturer = enumerator.createCapturer(chosenDevice, object : CameraVideoCapturer.CameraEventsHandler {
                 override fun onCameraError(errorDescription: String?) {
                     Log.e(TAG, "Camera error: $errorDescription")
@@ -154,7 +165,10 @@ class WebRtcManager(
             videoCapturer = capturer
             cameraVideoCapturer = capturer
             capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
-            capturer.startCapture(width, height, fps)
+
+            val sensorWidth = maxOf(width, height)
+            val sensorHeight = minOf(width, height)
+            capturer.startCapture(sensorWidth, sensorHeight, fps)
 
             val track = peerConnectionFactory.createVideoTrack("ARDAMSv0", videoSource)
             track.setEnabled(true)
@@ -162,7 +176,7 @@ class WebRtcManager(
             _localVideoTrack.value = track
             _isBroadcastingScreen.value = false
             _isBroadcasting.value = true
-            Log.i(TAG, "Camera broadcast started: streamId=$streamId")
+            Log.i(TAG, "Camera broadcast started: streamId=$streamId (${width}x${height}@${fps}fps, sensor=${sensorWidth}x${sensorHeight})")
         } catch (error: Throwable) {
             Log.e(TAG, "Failed to start camera broadcast", error)
             stopBroadcast()
@@ -282,10 +296,72 @@ class WebRtcManager(
         Log.i(TAG, "Broadcast stopped")
     }
 
+    private var maxBroadcastBitrateBps: Int = 2_000_000
+
+    fun setBroadcastBitrate(bitrateBps: Int) {
+        maxBroadcastBitrateBps = bitrateBps
+        peerConnections.values.forEach { pc ->
+            applyBitrateLimit(pc, bitrateBps)
+        }
+    }
+
+    fun applyBitrateLimit(peerConnection: PeerConnection, maxBitrateBps: Int = maxBroadcastBitrateBps) {
+        for (sender in peerConnection.senders) {
+            if (sender.track()?.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) {
+                val params = sender.parameters ?: continue
+                for (encoding in params.encodings) {
+                    encoding.maxBitrateBps = maxBitrateBps
+                    encoding.minBitrateBps = maxBitrateBps / 4
+                }
+                sender.parameters = params
+                Log.d(TAG, "Applied bitrate limit: ${maxBitrateBps / 1000} kbps")
+            }
+        }
+    }
+
+    fun changeScreenCaptureFormat(width: Int, height: Int, fps: Int) {
+        if (!_isBroadcastingScreen.value) return
+        try {
+            videoCapturer?.changeCaptureFormat(width, height, fps)
+            videoSource?.adaptOutputFormat(width, height, fps)
+            Log.i(TAG, "changeScreenCaptureFormat: updated to ${width}x${height}@${fps}fps")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to changeScreenCaptureFormat", e)
+        }
+    }
+
+    fun changeCameraCaptureFormat(width: Int, height: Int, fps: Int) {
+        val capturer = cameraVideoCapturer ?: return
+        try {
+            val sensorWidth = maxOf(width, height)
+            val sensorHeight = minOf(width, height)
+            capturer.changeCaptureFormat(sensorWidth, sensorHeight, fps)
+            Log.i(TAG, "changeCameraCaptureFormat: updated to ${sensorWidth}x${sensorHeight}@${fps}fps")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to changeCameraCaptureFormat", e)
+        }
+    }
+
+    fun getScreenCapturerMediaProjection(): MediaProjection? {
+        val capturer = videoCapturer as? ScreenCapturerAndroid ?: return null
+        return try {
+            val field = ScreenCapturerAndroid::class.java.getDeclaredField("mediaProjection")
+            field.isAccessible = true
+            field.get(capturer) as? MediaProjection
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to obtain MediaProjection via reflection", e)
+            null
+        }
+    }
+
     /**
      * Joins and begins watching a remote stream (camera or screen).
      */
     fun watchStream(remoteClientId: Int, streamId: String) {
+        if (streamId == activeBroadcastStreamId) {
+            Log.w(TAG, "watchStream: cannot watch own broadcast stream $streamId")
+            return
+        }
         val key = peerKey(remoteClientId, streamId)
         if (peerConnections.containsKey(key)) return
 
@@ -381,6 +457,7 @@ class WebRtcManager(
                 MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO,
                 RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.INACTIVE),
             )
+            applyBitrateLimit(peerConnection)
             Log.i(TAG, "handleJoinRequest: local track ready, creating offer for $key")
 
             val constraints = MediaConstraints()
@@ -718,6 +795,78 @@ class WebRtcManager(
         }
         override fun onSetFailure(error: String?) {
             Log.e(TAG, "SDP set failure: $error")
+        }
+    }
+
+    /**
+     * Ensures camera frames sent to WebRTC have rotation = 0 and are physically upright.
+     * TeamSpeak 6 desktop's video renderer does not respect CVO (urn:3gpp:video-orientation),
+     * causing camera feeds to appear sideways. By performing physical rotation via libyuv
+     * NEON SIMD assembly (YuvHelper.I420Rotate), the desktop displays portrait and landscape
+     * correctly and upright, matching screen share behavior.
+     */
+    private class RotationVideoProcessor : VideoProcessor {
+        private var sink: VideoSink? = null
+
+        override fun setSink(sink: VideoSink?) {
+            this.sink = sink
+        }
+
+        override fun onCapturerStarted(success: Boolean) {}
+        override fun onCapturerStopped() {}
+
+        override fun onFrameCaptured(frame: VideoFrame) {
+            processFrame(frame)
+        }
+
+        override fun onFrameCaptured(frame: VideoFrame, parameters: VideoProcessor.FrameAdaptationParameters) {
+            val adaptedFrame = VideoProcessor.applyFrameAdaptationParameters(frame, parameters) ?: return
+            try {
+                processFrame(adaptedFrame)
+            } finally {
+                adaptedFrame.release()
+            }
+        }
+
+        private fun processFrame(frame: VideoFrame) {
+            val currentSink = sink ?: return
+            if (frame.rotation == 0) {
+                currentSink.onFrame(frame)
+                return
+            }
+
+            val i420 = frame.buffer.toI420()
+            if (i420 == null) {
+                currentSink.onFrame(frame)
+                return
+            }
+
+            try {
+                val isSwapped = frame.rotation % 180 != 0
+                val dstWidth = if (isSwapped) i420.height else i420.width
+                val dstHeight = if (isSwapped) i420.width else i420.height
+                val dstBuffer = JavaI420Buffer.allocate(dstWidth, dstHeight)
+
+                YuvHelper.I420Rotate(
+                    i420.dataY, i420.strideY,
+                    i420.dataU, i420.strideU,
+                    i420.dataV, i420.strideV,
+                    dstBuffer.dataY, dstBuffer.strideY,
+                    dstBuffer.dataU, dstBuffer.strideU,
+                    dstBuffer.dataV, dstBuffer.strideV,
+                    i420.width, i420.height,
+                    frame.rotation,
+                )
+
+                val rotatedFrame = VideoFrame(dstBuffer, 0, frame.timestampNs)
+                currentSink.onFrame(rotatedFrame)
+                rotatedFrame.release()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to rotate camera frame, falling back to unrotated", e)
+                currentSink.onFrame(frame)
+            } finally {
+                i420.release()
+            }
         }
     }
 

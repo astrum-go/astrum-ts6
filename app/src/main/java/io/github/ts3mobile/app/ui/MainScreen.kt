@@ -84,6 +84,7 @@ import io.github.ts3mobile.app.service.StreamViewer
 import io.github.ts3mobile.app.service.WatchedStream
 import io.github.ts3mobile.app.video.WebRtcManager
 import io.github.ts3mobile.app.video.WebRtcVideoView
+import io.github.ts3mobile.protocol.StreamPreset
 import io.github.ts3mobile.protocol.StreamType
 import io.github.ts3mobile.protocol.Ts6StreamInfo
 import org.webrtc.EglBase
@@ -199,8 +200,10 @@ fun MainScreen(
     suppressionMode: SuppressionMode = SuppressionMode.ASTRUM_CLARITY,
     onSuppressionModeChanged: (SuppressionMode) -> Unit = {},
     webRtcManager: WebRtcManager? = null,
-    onToggleCameraBroadcast: () -> Unit = {},
-    onToggleScreenBroadcast: () -> Unit = {},
+    onStartCameraBroadcast: (StreamPreset) -> Unit = {},
+    onStopCameraBroadcast: () -> Unit = {},
+    onStartScreenBroadcast: (StreamPreset, Boolean) -> Unit = { _, _ -> },
+    onStopScreenBroadcast: () -> Unit = {},
     onSwitchCamera: () -> Unit = {},
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
     onStopWatchingStream: (String?) -> Unit = {},
@@ -233,6 +236,23 @@ fun MainScreen(
     }
 
     var fullscreenStreamId by rememberSaveable { mutableStateOf<String?>(null) }
+    var streamDialogType by rememberSaveable { mutableStateOf<StreamDialogType?>(null) }
+
+    streamDialogType?.let { type ->
+        StreamConfigDialog(
+            type = type,
+            initialPreset = serviceState.currentStreamPreset,
+            onDismiss = { streamDialogType = null },
+            onConfirm = { preset, shareAudio ->
+                streamDialogType = null
+                if (type == StreamDialogType.CAMERA) {
+                    onStartCameraBroadcast(preset)
+                } else {
+                    onStartScreenBroadcast(preset, shareAudio)
+                }
+            },
+        )
+    }
 
     val activeWatchedStreams = serviceState.watchingStreams.ifEmpty {
         serviceState.watchingStreamId?.let { sId ->
@@ -346,8 +366,10 @@ fun MainScreen(
                     onSuppressionModeChanged = onSuppressionModeChanged,
                     onJoinChannel = onJoinChannel,
                     webRtcManager = webRtcManager,
-                    onToggleCameraBroadcast = onToggleCameraBroadcast,
-                    onToggleScreenBroadcast = onToggleScreenBroadcast,
+                    onRequestCameraBroadcast = { streamDialogType = StreamDialogType.CAMERA },
+                    onStopCameraBroadcast = onStopCameraBroadcast,
+                    onRequestScreenBroadcast = { streamDialogType = StreamDialogType.SCREEN },
+                    onStopScreenBroadcast = onStopScreenBroadcast,
                     onSwitchCamera = onSwitchCamera,
                     onWatchStream = onWatchStream,
                     onStopWatchingStream = onStopWatchingStream,
@@ -1230,8 +1252,10 @@ private fun ConnectedContent(
     onSuppressionModeChanged: (SuppressionMode) -> Unit,
     onJoinChannel: (Int, String) -> Unit,
     webRtcManager: WebRtcManager? = null,
-    onToggleCameraBroadcast: () -> Unit = {},
-    onToggleScreenBroadcast: () -> Unit = {},
+    onRequestCameraBroadcast: () -> Unit = {},
+    onStopCameraBroadcast: () -> Unit = {},
+    onRequestScreenBroadcast: () -> Unit = {},
+    onStopScreenBroadcast: () -> Unit = {},
     onSwitchCamera: () -> Unit = {},
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
     onStopWatchingStream: (String?) -> Unit = {},
@@ -1280,7 +1304,13 @@ private fun ConnectedContent(
                     routing = state.audioRouting,
                     onRouteSelected = onAudioRouteSelected,
                 )
-                IconButton(onClick = onToggleCameraBroadcast) {
+                IconButton(onClick = {
+                    if (state.isBroadcastingCamera) {
+                        onStopCameraBroadcast()
+                    } else {
+                        onRequestCameraBroadcast()
+                    }
+                }) {
                     Icon(
                         imageVector = if (state.isBroadcastingCamera) {
                             Icons.Filled.Videocam
@@ -1304,7 +1334,13 @@ private fun ConnectedContent(
                         )
                     }
                 }
-                IconButton(onClick = onToggleScreenBroadcast) {
+                IconButton(onClick = {
+                    if (state.isBroadcastingScreen) {
+                        onStopScreenBroadcast()
+                    } else {
+                        onRequestScreenBroadcast()
+                    }
+                }) {
                     Icon(
                         imageVector = if (state.isBroadcastingScreen) {
                             Icons.AutoMirrored.Filled.StopScreenShare
@@ -1337,6 +1373,16 @@ private fun ConnectedContent(
                     )
                 }
             }
+        }
+
+        if (state.isBroadcastingCamera || state.isBroadcastingScreen) {
+            LiveBroadcastBanner(
+                state = state,
+                onStopBroadcast = {
+                    if (state.isBroadcastingCamera) onStopCameraBroadcast()
+                    if (state.isBroadcastingScreen) onStopScreenBroadcast()
+                },
+            )
         }
 
         TabRow(
@@ -1388,11 +1434,16 @@ private fun ConnectedContent(
                     } ?: emptyList()
                 }
 
+                val otherActiveStreams = remember(state.snapshot.activeStreams, state.snapshot.ownClientId) {
+                    val ownId = state.snapshot.ownClientId
+                    state.snapshot.activeStreams.filter { it.clientId != ownId }
+                }
+
                 if (activeWatchedStreams.isNotEmpty() && webRtcManager != null) {
                     val remoteVideoTracks by webRtcManager.remoteVideoTracks.collectAsStateWithLifecycle()
                     ActiveStreamsSection(
                         watchedStreams = activeWatchedStreams,
-                        allActiveStreams = state.snapshot.activeStreams,
+                        allActiveStreams = otherActiveStreams,
                         participants = state.snapshot.participants,
                         remoteVideoTracks = remoteVideoTracks,
                         eglBaseContext = webRtcManager.eglBase.eglBaseContext,
@@ -1402,9 +1453,9 @@ private fun ConnectedContent(
                         onToggleOrientation = onToggleOrientation,
                         onToggleFullscreen = onToggleFullscreen,
                     )
-                } else if (state.snapshot.activeStreams.isNotEmpty()) {
+                } else if (otherActiveStreams.isNotEmpty()) {
                     AvailableStreamsBanner(
-                        activeStreams = state.snapshot.activeStreams,
+                        activeStreams = otherActiveStreams,
                         participants = state.snapshot.participants,
                         onWatchStream = onWatchStream,
                     )
@@ -1552,6 +1603,75 @@ private fun ConnectedContent(
                             }
                         }
                     }
+
+                    if (state.isBroadcastingScreen) {
+                        Card(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(12.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.StopScreenShare,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Column {
+                                    Text(
+                                        text = "Transmitindo tela (${state.currentStreamPreset.title})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Visibility,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(12.dp),
+                                        )
+                                        Text(
+                                            text = "${state.activeViewers.size} espectador(es)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        if (state.isSharingSystemAudio) {
+                                            Text(
+                                                text = "· Áudio interno",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        }
+                                    }
+                                }
+                                IconButton(
+                                    onClick = onStopScreenBroadcast,
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Parar transmissão de tela",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1564,6 +1684,99 @@ private fun ConnectedContent(
             suppressionMode = suppressionMode,
             onSuppressionModeChanged = onSuppressionModeChanged,
         )
+    }
+}
+
+@Composable
+private fun LiveBroadcastBanner(
+    state: TeamSpeakServiceState,
+    onStopBroadcast: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.error,
+                    shape = RoundedCornerShape(4.dp),
+                ) {
+                    Text(
+                        text = "AO VIVO",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onError,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    )
+                }
+
+                Text(
+                    text = if (state.isBroadcastingScreen) "Tela" else "Câmera",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+
+                Text(
+                    text = "• ${state.currentStreamPreset.title}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                if (state.isSharingSystemAudio) {
+                    Icon(
+                        imageVector = Icons.Outlined.GraphicEq,
+                        contentDescription = "Áudio interno ativo",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Visibility,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = "${state.activeViewers.size}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick = onStopBroadcast,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                modifier = Modifier.height(28.dp),
+            ) {
+                Text(
+                    text = "Parar",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
     }
 }
 

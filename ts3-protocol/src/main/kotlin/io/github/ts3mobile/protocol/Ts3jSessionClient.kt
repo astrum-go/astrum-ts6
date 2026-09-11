@@ -188,7 +188,14 @@ class Ts3jSessionClient : Ts3SessionClient {
         queryActiveStreams(current)
     }
 
-    override fun startStream(type: StreamType, width: Int, height: Int, fps: Int): String {
+    override fun startStream(
+        type: StreamType,
+        width: Int,
+        height: Int,
+        fps: Int,
+        bitrateKbps: Int,
+        hasAudio: Boolean,
+    ): String {
         val latch = CountDownLatch(1)
         pendingStreamStartedLatch.set(latch)
         pendingStreamStartedId.set(null)
@@ -198,11 +205,11 @@ class Ts3jSessionClient : Ts3SessionClient {
             "setupstream",
             "name" to if (type == StreamType.SCREEN) "Screen" else "Camera",
             "type" to type.value.toString(),
-            "bitrate" to "4608",
+            "bitrate" to bitrateKbps.toString(),
             "accessibility" to "1",
             "mode" to "1",
             "viewer_limit" to "0",
-            "audio" to "0",
+            "audio" to if (hasAudio) "1" else "0",
         ) { resp ->
             val serverStreamId = resp?.get("id")?.value
                 ?: resp?.get("streamid")?.value
@@ -215,7 +222,7 @@ class Ts3jSessionClient : Ts3SessionClient {
                     width = width,
                     height = height,
                     fps = fps,
-                    bitrate = 4608,
+                    bitrate = bitrateKbps,
                     description = if (type == StreamType.SCREEN) "Screen" else "Camera",
                 )
                 snapshotStore.putStream(streamInfo)

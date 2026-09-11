@@ -6,6 +6,7 @@ import io.github.ts3mobile.protocol.ConnectionStatus
 import io.github.ts3mobile.protocol.SessionSnapshot
 import io.github.ts3mobile.protocol.Ts3Participant
 
+import io.github.ts3mobile.protocol.StreamPreset
 import io.github.ts3mobile.protocol.StreamType
 
 enum class MicrophoneMode {
@@ -68,6 +69,8 @@ data class TeamSpeakServiceState(
     val isBroadcastingCamera: Boolean = false,
     val isBroadcastingScreen: Boolean = false,
     val isFrontCamera: Boolean = true,
+    val currentStreamPreset: StreamPreset = StreamPreset.BALANCED_720P_30,
+    val isSharingSystemAudio: Boolean = false,
     val activeBroadcastStreamId: String? = null,
     val watchingStreamId: String? = null,
     val watchingStreamClientId: Int? = null,

@@ -93,6 +93,21 @@ enum class StreamType(val value: Int) {
     }
 }
 
+enum class StreamPreset(
+    val title: String,
+    val description: String,
+    val maxDimension: Int,
+    val fps: Int,
+    val bitrateKbps: Int,
+) {
+    BALANCED_720P_30("720p @ 30fps", "Equilibrado (Recomendado)", 720, 30, 2000),
+    HIGH_1080P_30("1080p @ 30fps", "Alta Nitidez (Texto/Telas)", 1080, 30, 3500),
+    GAMING_720P_60("720p @ 60fps", "Alta Fluidez (Jogos)", 720, 60, 3500),
+    LOW_480P_30("480p @ 30fps", "Econômico (Poupa bateria/dados)", 480, 30, 800);
+
+    val bitrateBps: Int get() = bitrateKbps * 1000
+}
+
 data class Ts6StreamInfo(
     val streamId: String,
     val clientId: Int,

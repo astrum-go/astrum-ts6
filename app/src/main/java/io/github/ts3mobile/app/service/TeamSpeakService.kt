@@ -2,19 +2,25 @@ package io.github.ts3mobile.app.service
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.hardware.SensorManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
+import android.util.Log
+import android.view.OrientationEventListener
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -25,12 +31,14 @@ import io.github.ts3mobile.app.video.WebRtcManager
 import io.github.ts3mobile.audio.opus.AudioDeviceRouter
 import io.github.ts3mobile.audio.opus.OpusAudioPlayer
 import io.github.ts3mobile.audio.opus.OpusMicrophoneCapture
+import io.github.ts3mobile.audio.opus.SystemAudioCapture
 import io.github.ts3mobile.audio.opus.AudioRoutingState
 import io.github.ts3mobile.audio.opus.SuppressionMode
 import io.github.ts3mobile.protocol.ConnectionPhase
 import io.github.ts3mobile.protocol.ConnectionStatus
 import io.github.ts3mobile.protocol.ServerConfig
 import io.github.ts3mobile.protocol.SessionSnapshot
+import io.github.ts3mobile.protocol.StreamPreset
 import io.github.ts3mobile.protocol.StreamType
 import io.github.ts3mobile.protocol.Ts3SessionClient
 import io.github.ts3mobile.protocol.Ts3SessionListener
@@ -103,6 +111,9 @@ class TeamSpeakService : Service() {
     private var reconnectJob: Job? = null
     private var stableConnectionJob: Job? = null
     private val queriedStreamClientIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    private var orientationListener: OrientationEventListener? = null
+    private var systemAudioCapture: SystemAudioCapture? = null
+    private var lastScreenOrientation = -1
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -195,6 +206,7 @@ class TeamSpeakService : Service() {
             }
 
             ACTION_DISCONNECT -> requestDisconnect()
+            ACTION_STOP_BROADCAST -> stopBroadcast()
         }
         return START_NOT_STICKY
     }
@@ -457,7 +469,8 @@ class TeamSpeakService : Service() {
                 webRtcManager.updateBroadcastStreamId(stream.streamId)
                 mutableState.update {
                     it.copy(
-                        isBroadcastingCamera = true,
+                        isBroadcastingCamera = stream.type == StreamType.CAMERA,
+                        isBroadcastingScreen = stream.type == StreamType.SCREEN || stream.type == StreamType.WINDOW,
                         activeBroadcastStreamId = stream.streamId,
                     )
                 }
@@ -846,8 +859,11 @@ class TeamSpeakService : Service() {
             return
         }
         pushToTalkPressed.set(pressed)
-        if (!pressed) {
+        microphone.isVoiceTransmitting = pressed
+        if (!pressed && !mutableState.value.isSharingSystemAudio) {
             mutableState.update { it.copy(isTransmitting = false) }
+        } else if (pressed) {
+            mutableState.update { it.copy(isTransmitting = true) }
         }
         reconcileMicrophone()
     }
@@ -872,13 +888,19 @@ class TeamSpeakService : Service() {
                 }
 
                 try {
+                    val isVoiceAllowed = when (mutableState.value.microphoneMode) {
+                        MicrophoneMode.OFF -> false
+                        MicrophoneMode.PUSH_TO_TALK -> pushToTalkPressed.get()
+                        MicrophoneMode.CONTINUOUS -> true
+                    }
+                    microphone.isVoiceTransmitting = isVoiceAllowed
                     updateForegroundType(includeMicrophone = true)
                     microphone.start()
                     if (!shouldCaptureMicrophone()) {
                         stopMicrophoneLocked()
                     } else {
                         mutableState.update {
-                            it.copy(isTransmitting = true, microphoneError = null)
+                            it.copy(isTransmitting = isVoiceAllowed || it.isSharingSystemAudio, microphoneError = null)
                         }
                         updateNotification()
                     }
@@ -900,6 +922,7 @@ class TeamSpeakService : Service() {
     private fun shouldCaptureMicrophone(): Boolean {
         val current = mutableState.value
         if (current.status.phase != ConnectionPhase.CONNECTED) return false
+        if (current.isSharingSystemAudio) return true
         return when (current.microphoneMode) {
             MicrophoneMode.OFF -> false
             MicrophoneMode.PUSH_TO_TALK -> pushToTalkPressed.get()
@@ -998,39 +1021,61 @@ class TeamSpeakService : Service() {
         status: ConnectionStatus,
         onlineCount: Int = 0,
         microphoneActive: Boolean = false,
-    ) = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_app)
-        .setContentTitle(getString(R.string.app_name))
-        .setContentText(
-            if (microphoneActive) {
-                getString(R.string.notification_microphone_active, host, onlineCount)
-            } else {
-                when (status.phase) {
-                    ConnectionPhase.CONNECTING -> getString(R.string.notification_connecting, host)
-                    ConnectionPhase.RECONNECTING -> status.detail
-                        ?: getString(R.string.notification_reconnecting, host)
-                    ConnectionPhase.DISCONNECTING -> getString(R.string.notification_disconnecting, host)
-                    ConnectionPhase.CONNECTED -> resources.getQuantityString(
-                        R.plurals.notification_connected,
-                        onlineCount,
-                        host,
-                        onlineCount,
-                    )
-                    ConnectionPhase.DISCONNECTED,
-                    ConnectionPhase.ERROR,
-                    -> host
-                }
-            },
-        )
-        .setContentIntent(
-            PendingIntent.getActivity(
-                this,
+    ): Notification {
+        val isBroadcastingScreen = mutableState.value.isBroadcastingScreen
+        val isBroadcastingCamera = mutableState.value.isBroadcastingCamera
+        val isBroadcasting = isBroadcastingScreen || isBroadcastingCamera
+
+        val contentText = when {
+            isBroadcastingScreen -> "Transmitindo tela ao vivo (${mutableState.value.activeViewers.size} espectador(es))"
+            isBroadcastingCamera -> "Transmitindo câmera ao vivo (${mutableState.value.activeViewers.size} espectador(es))"
+            microphoneActive -> getString(R.string.notification_microphone_active, host, onlineCount)
+            else -> when (status.phase) {
+                ConnectionPhase.CONNECTING -> getString(R.string.notification_connecting, host)
+                ConnectionPhase.RECONNECTING -> status.detail
+                    ?: getString(R.string.notification_reconnecting, host)
+                ConnectionPhase.DISCONNECTING -> getString(R.string.notification_disconnecting, host)
+                ConnectionPhase.CONNECTED -> resources.getQuantityString(
+                    R.plurals.notification_connected,
+                    onlineCount,
+                    host,
+                    onlineCount,
+                )
+                ConnectionPhase.DISCONNECTED,
+                ConnectionPhase.ERROR -> host
+            }
+        }
+
+        val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_app)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(contentText)
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+
+        if (isBroadcasting) {
+            builder.addAction(
                 0,
-                Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            ),
-        )
-        .addAction(
+                "Parar Transmissão",
+                PendingIntent.getService(
+                    this,
+                    2,
+                    Intent(this, TeamSpeakService::class.java).setAction(ACTION_STOP_BROADCAST),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        }
+
+        builder.addAction(
             0,
             getString(R.string.notification_disconnect),
             PendingIntent.getService(
@@ -1040,10 +1085,9 @@ class TeamSpeakService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ),
         )
-        .setOngoing(true)
-        .setOnlyAlertOnce(true)
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        .build()
+
+        return builder.build()
+    }
 
     private fun createNotificationChannel() {
         val manager = getSystemService(NotificationManager::class.java)
@@ -1107,33 +1151,98 @@ class TeamSpeakService : Service() {
         }
     }
 
-    private fun startCameraBroadcast() {
+    private fun calculateScreenDimensions(maxDimension: Int): Pair<Int, Int> {
+        val metrics = resources.displayMetrics
+        val rawWidth = metrics.widthPixels
+        val rawHeight = metrics.heightPixels
+
+        val maxSide = maxOf(rawWidth, rawHeight)
+        val scale = if (maxSide > maxDimension) {
+            maxDimension.toFloat() / maxSide
+        } else 1.0f
+
+        var captureWidth = ((rawWidth * scale).toInt() / 16) * 16
+        var captureHeight = ((rawHeight * scale).toInt() / 16) * 16
+        if (captureWidth < 16) captureWidth = 16
+        if (captureHeight < 16) captureHeight = 16
+        return Pair(captureWidth, captureHeight)
+    }
+
+    private fun calculateCameraDimensions(preset: StreamPreset, isPortrait: Boolean): Pair<Int, Int> {
+        val (shortSide, longSide) = when (preset) {
+            StreamPreset.HIGH_1080P_30 -> Pair(1080, 1920)
+            StreamPreset.LOW_480P_30 -> Pair(480, 854)
+            else -> Pair(720, 1280)
+        }
+        return if (isPortrait) Pair(shortSide, longSide) else Pair(longSide, shortSide)
+    }
+
+    private fun startCameraBroadcast(preset: StreamPreset = StreamPreset.BALANCED_720P_30) {
         if (mutableState.value.isBroadcastingCamera) return
         if (mutableState.value.isBroadcastingScreen) {
             stopScreenBroadcast()
         }
         serviceScope.launch {
             try {
+                webRtcManager.setBroadcastBitrate(preset.bitrateBps)
+                val isPortrait = resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+                val dims = calculateCameraDimensions(preset, isPortrait)
+
                 val streamId = sessionMutex.withLock {
                     check(mutableState.value.status.phase == ConnectionPhase.CONNECTED) { "Não conectado ao servidor" }
-                    session?.startStream(StreamType.CAMERA) ?: error("Sessão indisponível")
+                    session?.startStream(
+                        type = StreamType.CAMERA,
+                        width = dims.first,
+                        height = dims.second,
+                        fps = preset.fps,
+                        bitrateKbps = preset.bitrateKbps,
+                        hasAudio = false,
+                    ) ?: error("Sessão indisponível")
                 }
-                webRtcManager.startCameraBroadcast(streamId)
+                webRtcManager.startCameraBroadcast(
+                    streamId = streamId,
+                    width = dims.first,
+                    height = dims.second,
+                    fps = preset.fps,
+                )
                 mutableState.update {
                     it.copy(
                         isBroadcastingCamera = true,
                         isBroadcastingScreen = false,
+                        currentStreamPreset = preset,
                         activeBroadcastStreamId = streamId,
                     )
                 }
                 updateForegroundType(includeMicrophone = mutableState.value.isTransmitting)
+
+                orientationListener?.disable()
+                lastScreenOrientation = resources.configuration.orientation
+                orientationListener = object : OrientationEventListener(this@TeamSpeakService, SensorManager.SENSOR_DELAY_NORMAL) {
+                    override fun onOrientationChanged(orientation: Int) {
+                        if (orientation == ORIENTATION_UNKNOWN) return
+                        val currentConfigOrientation = resources.configuration.orientation
+                        if (currentConfigOrientation != lastScreenOrientation) {
+                            lastScreenOrientation = currentConfigOrientation
+                            val isPortraitNow = currentConfigOrientation != Configuration.ORIENTATION_LANDSCAPE
+                            val newDims = calculateCameraDimensions(preset, isPortraitNow)
+                            Log.i(TAG, "Camera orientation changed! New format: ${newDims.first}x${newDims.second}")
+                            webRtcManager.changeCameraCaptureFormat(newDims.first, newDims.second, preset.fps)
+                        }
+                    }
+                }
+                orientationListener?.enable()
+
+                updateNotification()
             } catch (error: Throwable) {
-                System.err.println("TS3_VIDEO: falha ao iniciar transmissão de vídeo: ${error.message}")
+                Log.e(TAG, "TS3_VIDEO: falha ao iniciar transmissão de câmera: ${error.message}", error)
             }
         }
     }
 
     private fun stopCameraBroadcast() {
+        orientationListener?.disable()
+        orientationListener = null
+
         val streamId = mutableState.value.activeBroadcastStreamId
         serviceScope.launch {
             if (streamId != null && mutableState.value.isBroadcastingCamera) {
@@ -1152,61 +1261,103 @@ class TeamSpeakService : Service() {
             )
         }
         updateForegroundType(includeMicrophone = mutableState.value.isTransmitting)
+        updateNotification()
     }
 
-    private fun startScreenBroadcast(resultData: Intent) {
+    private fun startScreenBroadcast(
+        resultData: Intent,
+        preset: StreamPreset = StreamPreset.BALANCED_720P_30,
+        shareAudio: Boolean = false,
+    ) {
         if (mutableState.value.isBroadcastingScreen) return
         if (mutableState.value.isBroadcastingCamera) {
             stopCameraBroadcast()
         }
         serviceScope.launch {
             try {
+                webRtcManager.setBroadcastBitrate(preset.bitrateBps)
+                val dims = calculateScreenDimensions(preset.maxDimension)
+
                 val streamId = sessionMutex.withLock {
                     check(mutableState.value.status.phase == ConnectionPhase.CONNECTED) { "Não conectado ao servidor" }
-                    session?.startStream(StreamType.SCREEN) ?: error("Sessão indisponível")
+                    session?.startStream(
+                        type = StreamType.SCREEN,
+                        width = dims.first,
+                        height = dims.second,
+                        fps = preset.fps,
+                        bitrateKbps = preset.bitrateKbps,
+                        hasAudio = shareAudio,
+                    ) ?: error("Sessão indisponível")
                 }
 
                 mutableState.update {
                     it.copy(
                         isBroadcastingScreen = true,
                         isBroadcastingCamera = false,
+                        currentStreamPreset = preset,
+                        isSharingSystemAudio = shareAudio,
                         activeBroadcastStreamId = streamId,
                     )
                 }
                 updateForegroundType(
-                    includeMicrophone = mutableState.value.isTransmitting,
+                    includeMicrophone = mutableState.value.isTransmitting || shareAudio,
                     includeMediaProjection = true,
                 )
-
-                val metrics = resources.displayMetrics
-                val rawWidth = metrics.widthPixels
-                val rawHeight = metrics.heightPixels
-
-                val maxDimension = 1920
-                val scale = if (maxOf(rawWidth, rawHeight) > maxDimension) {
-                    maxDimension.toFloat() / maxOf(rawWidth, rawHeight)
-                } else 1.0f
-
-                var captureWidth = ((rawWidth * scale).toInt() / 16) * 16
-                var captureHeight = ((rawHeight * scale).toInt() / 16) * 16
-                if (captureWidth < 16) captureWidth = 16
-                if (captureHeight < 16) captureHeight = 16
 
                 webRtcManager.startScreenBroadcast(
                     streamId = streamId,
                     resultData = resultData,
-                    width = captureWidth,
-                    height = captureHeight,
-                    fps = 30,
+                    width = dims.first,
+                    height = dims.second,
+                    fps = preset.fps,
                 )
+
+                if (shareAudio && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val mediaProjection = webRtcManager.getScreenCapturerMediaProjection()
+                    if (mediaProjection != null) {
+                        val sysCapture = SystemAudioCapture(mediaProjection)
+                        sysCapture.start()
+                        systemAudioCapture = sysCapture
+                        microphone.systemAudioCapture = sysCapture
+                        reconcileMicrophone()
+                        Log.i(TAG, "Attached SystemAudioCapture to microphone pipeline")
+                    } else {
+                        Log.w(TAG, "MediaProjection not yet available for system audio capture")
+                    }
+                }
+
+                orientationListener?.disable()
+                lastScreenOrientation = resources.configuration.orientation
+                orientationListener = object : OrientationEventListener(this@TeamSpeakService, SensorManager.SENSOR_DELAY_NORMAL) {
+                    override fun onOrientationChanged(orientation: Int) {
+                        if (orientation == ORIENTATION_UNKNOWN) return
+                        val currentConfigOrientation = resources.configuration.orientation
+                        if (currentConfigOrientation != lastScreenOrientation) {
+                            lastScreenOrientation = currentConfigOrientation
+                            val newDims = calculateScreenDimensions(preset.maxDimension)
+                            Log.i(TAG, "Screen orientation changed! Updating capture format to ${newDims.first}x${newDims.second}")
+                            webRtcManager.changeScreenCaptureFormat(newDims.first, newDims.second, preset.fps)
+                        }
+                    }
+                }
+                orientationListener?.enable()
+
+                updateNotification()
             } catch (error: Throwable) {
-                System.err.println("TS3_VIDEO: falha ao iniciar transmissão de tela: ${error.message}")
+                Log.e(TAG, "TS3_VIDEO: falha ao iniciar transmissão de tela: ${error.message}", error)
                 stopScreenBroadcast()
             }
         }
     }
 
     private fun stopScreenBroadcast() {
+        orientationListener?.disable()
+        orientationListener = null
+
+        systemAudioCapture?.stop()
+        systemAudioCapture = null
+        microphone.systemAudioCapture = null
+
         val streamId = mutableState.value.activeBroadcastStreamId
         serviceScope.launch {
             if (streamId != null && mutableState.value.isBroadcastingScreen) {
@@ -1219,6 +1370,7 @@ class TeamSpeakService : Service() {
         mutableState.update {
             it.copy(
                 isBroadcastingScreen = false,
+                isSharingSystemAudio = false,
                 activeBroadcastStreamId = if (it.isBroadcastingCamera) it.activeBroadcastStreamId else null,
                 activeViewers = if (it.isBroadcastingCamera) it.activeViewers else emptyList(),
                 pendingViewerRequests = if (it.isBroadcastingCamera) it.pendingViewerRequests else emptyList(),
@@ -1228,6 +1380,18 @@ class TeamSpeakService : Service() {
             includeMicrophone = mutableState.value.isTransmitting,
             includeMediaProjection = false,
         )
+        reconcileMicrophone()
+        updateNotification()
+    }
+
+    fun stopBroadcast() {
+        if (mutableState.value.isBroadcastingScreen) {
+            stopScreenBroadcast()
+        }
+        if (mutableState.value.isBroadcastingCamera) {
+            stopCameraBroadcast()
+        }
+        updateNotification()
     }
 
     fun acceptViewerRequest(viewer: StreamViewer) {
@@ -1273,6 +1437,16 @@ class TeamSpeakService : Service() {
     }
 
     private fun watchStream(remoteClientId: Int, streamId: String) {
+        val ownClientId = mutableState.value.snapshot.ownClientId
+        if (ownClientId != null && remoteClientId == ownClientId) {
+            Log.w(TAG, "watchStream: ignoring request to watch own stream (clientId=$remoteClientId, streamId=$streamId)")
+            return
+        }
+        val ownBroadcastStreamId = mutableState.value.activeBroadcastStreamId
+        if (ownBroadcastStreamId != null && streamId == ownBroadcastStreamId) {
+            Log.w(TAG, "watchStream: ignoring request to watch own broadcast stream (streamId=$streamId)")
+            return
+        }
         serviceScope.launch {
             try {
                 sessionMutex.withLock {
@@ -1375,20 +1549,28 @@ class TeamSpeakService : Service() {
             this@TeamSpeakService.joinChannel(channelId, password)
         }
 
-        fun startCameraBroadcast() {
-            this@TeamSpeakService.startCameraBroadcast()
+        fun startCameraBroadcast(preset: StreamPreset = StreamPreset.BALANCED_720P_30) {
+            this@TeamSpeakService.startCameraBroadcast(preset)
         }
 
         fun stopCameraBroadcast() {
             this@TeamSpeakService.stopCameraBroadcast()
         }
 
-        fun startScreenBroadcast(resultData: Intent) {
-            this@TeamSpeakService.startScreenBroadcast(resultData)
+        fun startScreenBroadcast(
+            resultData: Intent,
+            preset: StreamPreset = StreamPreset.BALANCED_720P_30,
+            shareAudio: Boolean = false,
+        ) {
+            this@TeamSpeakService.startScreenBroadcast(resultData, preset, shareAudio)
         }
 
         fun stopScreenBroadcast() {
             this@TeamSpeakService.stopScreenBroadcast()
+        }
+
+        fun stopBroadcast() {
+            this@TeamSpeakService.stopBroadcast()
         }
 
         fun switchCamera() {
@@ -1443,6 +1625,8 @@ class TeamSpeakService : Service() {
     companion object {
         private const val ACTION_CONNECT = "io.github.ts3mobile.action.CONNECT"
         private const val ACTION_DISCONNECT = "io.github.ts3mobile.action.DISCONNECT"
+        private const val ACTION_STOP_BROADCAST = "io.github.ts3mobile.action.STOP_BROADCAST"
+        private const val TAG = "TeamSpeakService"
         private const val EXTRA_HOST = "host"
         private const val EXTRA_PORT = "port"
         private const val EXTRA_NICKNAME = "nickname"
