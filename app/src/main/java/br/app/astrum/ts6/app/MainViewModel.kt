@@ -1,4 +1,4 @@
-﻿package br.app.astrum.ts6.app
+package br.app.astrum.ts6.app
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -23,7 +23,7 @@ enum class MainTab {
 data class ConnectionFormState(
     val host: String = "",
     val port: String = "9987",
-    val nickname: String = "TS3 Mobile",
+    val nickname: String = "TS6 Mobile",
     val password: String = "",
     val saveToList: Boolean = true,
     val serverName: String = "",
@@ -75,7 +75,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openAddServerDialog() {
-        val defaultNickname = quickForm.value.nickname.ifBlank { "TS3 Mobile" }
+        val defaultNickname = quickForm.value.nickname.ifBlank { "TS6 Mobile" }
         mutableEditingServer.value = SavedServer(
             id = UUID.randomUUID().toString(),
             name = "",

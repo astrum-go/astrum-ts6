@@ -1,4 +1,4 @@
-﻿package br.app.astrum.ts6.app.data
+package br.app.astrum.ts6.app.data
 
 import br.app.astrum.ts6.protocol.ServerConfig
 import java.util.UUID
@@ -11,7 +11,7 @@ data class SavedServer(
     val name: String = "",
     val host: String = "",
     val port: Int = 9987,
-    val nickname: String = "TS3 Mobile",
+    val nickname: String = "TS6 Mobile",
     val password: String = "",
     val lastConnectedAt: Long = 0L,
 ) {
@@ -28,13 +28,13 @@ data class SavedServer(
         get() = if (port == 9987) host.trim() else "${host.trim()}:$port"
 
     /**
-     * Converte para a configuração de servidor do protocolo TS3.
+     * Converte para a configuração de servidor do protocolo TS6/TS3.
      */
     fun toServerConfig(): ServerConfig {
         return ServerConfig(
             host = host.trim(),
             port = port,
-            nickname = nickname.trim().ifBlank { "TS3 Mobile" },
+            nickname = nickname.trim().ifBlank { "TS6 Mobile" },
             password = password,
         ).normalized()
     }

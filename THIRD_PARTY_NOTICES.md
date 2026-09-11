@@ -9,9 +9,7 @@ component remains subject to its own license.
 
 - Project: [Manevolent/ts3j](https://github.com/Manevolent/ts3j)
 - Pinned revision: `db57d60c989e399626aa16d921390f5033e6cdeb`
-- License: Apache License 2.0
-
-The Apache License 2.0 text is included in this repository as [LICENSE](LICENSE).
+- License: Apache License 2.0 ([http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
 
 ## libopus
 

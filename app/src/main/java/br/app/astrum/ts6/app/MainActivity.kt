@@ -1,4 +1,4 @@
-﻿package br.app.astrum.ts6.app
+package br.app.astrum.ts6.app
 
 import android.Manifest
 import android.app.PictureInPictureParams
@@ -31,7 +31,7 @@ import br.app.astrum.ts6.app.service.TeamSpeakServiceState
 import br.app.astrum.ts6.app.service.MicrophoneMode
 import br.app.astrum.ts6.audio.opus.SuppressionMode
 import br.app.astrum.ts6.app.ui.MainScreen
-import br.app.astrum.ts6.app.ui.theme.Ts3MobileTheme
+import br.app.astrum.ts6.app.ui.theme.Ts6MobileTheme
 import br.app.astrum.ts6.protocol.ServerConfig
 import br.app.astrum.ts6.protocol.StreamPreset
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            Ts3MobileTheme {
+            Ts6MobileTheme {
                 val fallbackState = remember { MutableStateFlow(TeamSpeakServiceState()) }
                 val serviceState by (serviceBinder?.state ?: fallbackState)
                     .collectAsStateWithLifecycle()

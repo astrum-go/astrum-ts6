@@ -1,4 +1,4 @@
-﻿package br.app.astrum.ts6.app.data
+package br.app.astrum.ts6.app.data
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -38,7 +38,7 @@ object SavedServerSerializer {
                         name = item.optString("name", ""),
                         host = item.optString("host", ""),
                         port = item.optInt("port", 9987),
-                        nickname = item.optString("nickname", "TS3 Mobile"),
+                        nickname = item.optString("nickname", "TS6 Mobile"),
                         password = item.optString("password", ""),
                         lastConnectedAt = item.optLong("lastConnectedAt", 0L),
                     )

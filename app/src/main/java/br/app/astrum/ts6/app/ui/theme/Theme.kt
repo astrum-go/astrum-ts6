@@ -1,4 +1,4 @@
-﻿package br.app.astrum.ts6.app.ui.theme
+package br.app.astrum.ts6.app.ui.theme
 
 import android.app.Activity
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -118,7 +118,7 @@ private val AppShapes = Shapes(
 )
 
 @Composable
-fun Ts3MobileTheme(content: @Composable () -> Unit) {
+fun Ts6MobileTheme(content: @Composable () -> Unit) {
     val colors = DarkColors
     val view = LocalView.current
 

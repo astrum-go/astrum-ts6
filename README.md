@@ -80,7 +80,7 @@ Requirements:
 Set `sdk.dir` in an untracked `local.properties`, then run:
 
 ```powershell
-.\gradlew.bat :ts3-protocol:test :audio-opus:testDebugUnitTest :audio-opus:lintDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+.\gradlew.bat :ts6-protocol:test :audio-opus:testDebugUnitTest :audio-opus:lintDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
 With a physical Android device connected, run the native codec test with:
@@ -101,7 +101,7 @@ suspected vulnerability; use the process in [SECURITY.md](SECURITY.md).
 
 ## License
 
-TS3 Mobile is licensed under the [Apache License 2.0](LICENSE). Components from
+TS6 Mobile Community is licensed under the [GNU Affero General Public License v3.0](LICENSE). Components from
 other projects remain under their respective licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

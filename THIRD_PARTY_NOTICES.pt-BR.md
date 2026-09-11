@@ -1,4 +1,4 @@
-﻿🌐 [English](THIRD_PARTY_NOTICES.md) · [Português (Brasil)](THIRD_PARTY_NOTICES.pt-BR.md)
+🌐 [English](THIRD_PARTY_NOTICES.md) · [Português (Brasil)](THIRD_PARTY_NOTICES.pt-BR.md)
 
 # Avisos de Terceiros
 
@@ -8,8 +8,7 @@ O TS6 Mobile Community incorpora ou depende dos seguintes softwares de terceiros
 
 - Projeto: [Manevolent/ts3j](https://github.com/Manevolent/ts3j)
 - Revisão fixada: `db57d60c989e399626aa16d921390f5033e6cdeb`
-- Licença: Apache License 2.0
-- O texto da Apache License 2.0 está incluído neste repositório em [LICENSE](LICENSE).
+- Licença: Apache License 2.0 ([http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
 
 ## libopus
 

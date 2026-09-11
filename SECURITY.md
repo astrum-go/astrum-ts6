@@ -25,4 +25,4 @@ This volunteer project cannot promise a response or remediation deadline.
 
 Reports about TeamSpeak servers, the official TeamSpeak clients, Android, ts3j,
 libopus, or RNNoise should be sent to the corresponding upstream project unless
-the issue is caused by TS3 Mobile's integration.
+the issue is caused by TS6 Mobile Community's integration.
