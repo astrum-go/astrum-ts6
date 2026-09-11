@@ -66,6 +66,7 @@ data class TeamSpeakServiceState(
     val channelError: String? = null,
     val audioRouting: AudioRoutingState = AudioRoutingState.Default,
     val isBroadcastingCamera: Boolean = false,
+    val isBroadcastingScreen: Boolean = false,
     val isFrontCamera: Boolean = true,
     val activeBroadcastStreamId: String? = null,
     val watchingStreamId: String? = null,

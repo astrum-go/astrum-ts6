@@ -9,6 +9,7 @@ import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -71,6 +72,14 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         if (granted) {
             serviceBinder?.startCameraBroadcast()
+        }
+    }
+
+    private val screenCapturePermission = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            serviceBinder?.startScreenBroadcast(result.data!!)
         }
     }
 
@@ -168,6 +177,14 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 cameraPermission.launch(Manifest.permission.CAMERA)
                             }
+                        }
+                    },
+                    onToggleScreenBroadcast = {
+                        if (serviceState.isBroadcastingScreen) {
+                            serviceBinder?.stopScreenBroadcast()
+                        } else {
+                            val mediaProjectionManager = getSystemService(MediaProjectionManager::class.java)
+                            screenCapturePermission.launch(mediaProjectionManager.createScreenCaptureIntent())
                         }
                     },
                     onSwitchCamera = {

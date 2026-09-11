@@ -52,6 +52,8 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.automirrored.filled.StopScreenShare
+import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material.icons.outlined.AlternateEmail
@@ -198,6 +200,7 @@ fun MainScreen(
     onSuppressionModeChanged: (SuppressionMode) -> Unit = {},
     webRtcManager: WebRtcManager? = null,
     onToggleCameraBroadcast: () -> Unit = {},
+    onToggleScreenBroadcast: () -> Unit = {},
     onSwitchCamera: () -> Unit = {},
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
     onStopWatchingStream: (String?) -> Unit = {},
@@ -344,6 +347,7 @@ fun MainScreen(
                     onJoinChannel = onJoinChannel,
                     webRtcManager = webRtcManager,
                     onToggleCameraBroadcast = onToggleCameraBroadcast,
+                    onToggleScreenBroadcast = onToggleScreenBroadcast,
                     onSwitchCamera = onSwitchCamera,
                     onWatchStream = onWatchStream,
                     onStopWatchingStream = onStopWatchingStream,
@@ -1227,6 +1231,7 @@ private fun ConnectedContent(
     onJoinChannel: (Int, String) -> Unit,
     webRtcManager: WebRtcManager? = null,
     onToggleCameraBroadcast: () -> Unit = {},
+    onToggleScreenBroadcast: () -> Unit = {},
     onSwitchCamera: () -> Unit = {},
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
     onStopWatchingStream: (String?) -> Unit = {},
@@ -1298,6 +1303,21 @@ private fun ConnectedContent(
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
+                }
+                IconButton(onClick = onToggleScreenBroadcast) {
+                    Icon(
+                        imageVector = if (state.isBroadcastingScreen) {
+                            Icons.AutoMirrored.Filled.StopScreenShare
+                        } else {
+                            Icons.AutoMirrored.Outlined.ScreenShare
+                        },
+                        contentDescription = if (state.isBroadcastingScreen) "Parar transmissão de tela" else "Transmitir tela",
+                        tint = if (state.isBroadcastingScreen) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
                 IconButton(onClick = { onPlaybackMutedChange(!state.playbackMuted) }) {
                     Icon(

@@ -148,6 +148,11 @@ class TeamSpeakService : Service() {
                 }
             },
         )
+        webRtcManager.onBroadcastStoppedCallback = {
+            serviceScope.launch {
+                stopScreenBroadcast()
+            }
+        }
         serviceScope.launch {
             webRtcManager.isFrontCamera.collect { isFront ->
                 mutableState.update { it.copy(isFrontCamera = isFront) }
@@ -478,6 +483,7 @@ class TeamSpeakService : Service() {
             // A corrida entre o servidor notificando o PC e o celular completar o setup causava rejeição
             // da 1ª tentativa de join, pois isBroadcasting ainda era false naquele momento.
             val currentlyBroadcasting = mutableState.value.isBroadcastingCamera ||
+                mutableState.value.isBroadcastingScreen ||
                 webRtcManager.isBroadcasting.value
             if (!currentlyBroadcasting) {
                 serviceScope.launch {
@@ -931,7 +937,10 @@ class TeamSpeakService : Service() {
         mutableState.update { it.copy(audioRouting = routing) }
     }
 
-    private fun updateForegroundType(includeMicrophone: Boolean) {
+    private fun updateForegroundType(
+        includeMicrophone: Boolean,
+        includeMediaProjection: Boolean = mutableState.value.isBroadcastingScreen,
+    ) {
         val current = mutableState.value
         if (current.status.phase !in foregroundPhases) return
         val host = current.serverLabel ?: return
@@ -943,6 +952,7 @@ class TeamSpeakService : Service() {
                 microphoneActive = includeMicrophone,
             ),
             includeMicrophone = includeMicrophone,
+            includeMediaProjection = includeMediaProjection,
         )
     }
 
@@ -950,13 +960,19 @@ class TeamSpeakService : Service() {
     private fun startForegroundWithTypes(
         notification: android.app.Notification,
         includeMicrophone: Boolean,
+        includeMediaProjection: Boolean = mutableState.value.isBroadcastingScreen,
     ) {
         val baseTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        val types = baseTypes or if (includeMicrophone) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        } else {
-            0
+        var types = baseTypes
+        if (includeMicrophone) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+        if (mutableState.value.isBroadcastingCamera) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        }
+        if (includeMediaProjection) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         }
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, types)
     }
@@ -1093,6 +1109,9 @@ class TeamSpeakService : Service() {
 
     private fun startCameraBroadcast() {
         if (mutableState.value.isBroadcastingCamera) return
+        if (mutableState.value.isBroadcastingScreen) {
+            stopScreenBroadcast()
+        }
         serviceScope.launch {
             try {
                 val streamId = sessionMutex.withLock {
@@ -1103,9 +1122,11 @@ class TeamSpeakService : Service() {
                 mutableState.update {
                     it.copy(
                         isBroadcastingCamera = true,
+                        isBroadcastingScreen = false,
                         activeBroadcastStreamId = streamId,
                     )
                 }
+                updateForegroundType(includeMicrophone = mutableState.value.isTransmitting)
             } catch (error: Throwable) {
                 System.err.println("TS3_VIDEO: falha ao iniciar transmissão de vídeo: ${error.message}")
             }
@@ -1115,7 +1136,7 @@ class TeamSpeakService : Service() {
     private fun stopCameraBroadcast() {
         val streamId = mutableState.value.activeBroadcastStreamId
         serviceScope.launch {
-            if (streamId != null) {
+            if (streamId != null && mutableState.value.isBroadcastingCamera) {
                 sessionMutex.withLock {
                     runCatching { session?.stopStream(streamId) }
                 }
@@ -1125,11 +1146,88 @@ class TeamSpeakService : Service() {
         mutableState.update {
             it.copy(
                 isBroadcastingCamera = false,
-                activeBroadcastStreamId = null,
-                activeViewers = emptyList(),
-                pendingViewerRequests = emptyList(),
+                activeBroadcastStreamId = if (it.isBroadcastingScreen) it.activeBroadcastStreamId else null,
+                activeViewers = if (it.isBroadcastingScreen) it.activeViewers else emptyList(),
+                pendingViewerRequests = if (it.isBroadcastingScreen) it.pendingViewerRequests else emptyList(),
             )
         }
+        updateForegroundType(includeMicrophone = mutableState.value.isTransmitting)
+    }
+
+    private fun startScreenBroadcast(resultData: Intent) {
+        if (mutableState.value.isBroadcastingScreen) return
+        if (mutableState.value.isBroadcastingCamera) {
+            stopCameraBroadcast()
+        }
+        serviceScope.launch {
+            try {
+                val streamId = sessionMutex.withLock {
+                    check(mutableState.value.status.phase == ConnectionPhase.CONNECTED) { "Não conectado ao servidor" }
+                    session?.startStream(StreamType.SCREEN) ?: error("Sessão indisponível")
+                }
+
+                mutableState.update {
+                    it.copy(
+                        isBroadcastingScreen = true,
+                        isBroadcastingCamera = false,
+                        activeBroadcastStreamId = streamId,
+                    )
+                }
+                updateForegroundType(
+                    includeMicrophone = mutableState.value.isTransmitting,
+                    includeMediaProjection = true,
+                )
+
+                val metrics = resources.displayMetrics
+                val rawWidth = metrics.widthPixels
+                val rawHeight = metrics.heightPixels
+
+                val maxDimension = 1920
+                val scale = if (maxOf(rawWidth, rawHeight) > maxDimension) {
+                    maxDimension.toFloat() / maxOf(rawWidth, rawHeight)
+                } else 1.0f
+
+                var captureWidth = ((rawWidth * scale).toInt() / 16) * 16
+                var captureHeight = ((rawHeight * scale).toInt() / 16) * 16
+                if (captureWidth < 16) captureWidth = 16
+                if (captureHeight < 16) captureHeight = 16
+
+                webRtcManager.startScreenBroadcast(
+                    streamId = streamId,
+                    resultData = resultData,
+                    width = captureWidth,
+                    height = captureHeight,
+                    fps = 30,
+                )
+            } catch (error: Throwable) {
+                System.err.println("TS3_VIDEO: falha ao iniciar transmissão de tela: ${error.message}")
+                stopScreenBroadcast()
+            }
+        }
+    }
+
+    private fun stopScreenBroadcast() {
+        val streamId = mutableState.value.activeBroadcastStreamId
+        serviceScope.launch {
+            if (streamId != null && mutableState.value.isBroadcastingScreen) {
+                sessionMutex.withLock {
+                    runCatching { session?.stopStream(streamId) }
+                }
+            }
+        }
+        webRtcManager.stopScreenBroadcast()
+        mutableState.update {
+            it.copy(
+                isBroadcastingScreen = false,
+                activeBroadcastStreamId = if (it.isBroadcastingCamera) it.activeBroadcastStreamId else null,
+                activeViewers = if (it.isBroadcastingCamera) it.activeViewers else emptyList(),
+                pendingViewerRequests = if (it.isBroadcastingCamera) it.pendingViewerRequests else emptyList(),
+            )
+        }
+        updateForegroundType(
+            includeMicrophone = mutableState.value.isTransmitting,
+            includeMediaProjection = false,
+        )
     }
 
     fun acceptViewerRequest(viewer: StreamViewer) {
@@ -1283,6 +1381,14 @@ class TeamSpeakService : Service() {
 
         fun stopCameraBroadcast() {
             this@TeamSpeakService.stopCameraBroadcast()
+        }
+
+        fun startScreenBroadcast(resultData: Intent) {
+            this@TeamSpeakService.startScreenBroadcast(resultData)
+        }
+
+        fun stopScreenBroadcast() {
+            this@TeamSpeakService.stopScreenBroadcast()
         }
 
         fun switchCamera() {

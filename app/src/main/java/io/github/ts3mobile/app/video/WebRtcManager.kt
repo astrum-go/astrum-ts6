@@ -1,8 +1,11 @@
 package io.github.ts3mobile.app.video
 
 import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjection
 import android.util.Log
 import io.github.ts3mobile.protocol.StreamType
+import org.webrtc.ScreenCapturerAndroid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -53,8 +56,11 @@ class WebRtcManager(
 
     private val peerConnectionFactory: PeerConnectionFactory
 
+    var onBroadcastStoppedCallback: (() -> Unit)? = null
+
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
-    private var videoCapturer: CameraVideoCapturer? = null
+    private var videoCapturer: VideoCapturer? = null
+    private var cameraVideoCapturer: CameraVideoCapturer? = null
     private var videoSource: VideoSource? = null
     private var localVideoTrackInternal: VideoTrack? = null
 
@@ -63,6 +69,9 @@ class WebRtcManager(
 
     private val _isBroadcasting = MutableStateFlow(false)
     val isBroadcasting: StateFlow<Boolean> = _isBroadcasting.asStateFlow()
+
+    private val _isBroadcastingScreen = MutableStateFlow(false)
+    val isBroadcastingScreen: StateFlow<Boolean> = _isBroadcastingScreen.asStateFlow()
 
     private val _isFrontCamera = MutableStateFlow(true)
     val isFrontCamera: StateFlow<Boolean> = _isFrontCamera.asStateFlow()
@@ -143,6 +152,7 @@ class WebRtcManager(
             })
 
             videoCapturer = capturer
+            cameraVideoCapturer = capturer
             capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
             capturer.startCapture(width, height, fps)
 
@@ -150,11 +160,49 @@ class WebRtcManager(
             track.setEnabled(true)
             localVideoTrackInternal = track
             _localVideoTrack.value = track
+            _isBroadcastingScreen.value = false
             _isBroadcasting.value = true
             Log.i(TAG, "Camera broadcast started: streamId=$streamId")
         } catch (error: Throwable) {
             Log.e(TAG, "Failed to start camera broadcast", error)
-            stopCameraBroadcast()
+            stopBroadcast()
+        }
+    }
+
+    /**
+     * Starts broadcasting the device screen via MediaProjection to TeamSpeak 6 channel.
+     */
+    fun startScreenBroadcast(streamId: String, resultData: Intent, width: Int, height: Int, fps: Int = 30) {
+        if (_isBroadcasting.value) return
+        activeBroadcastStreamId = streamId
+
+        try {
+            surfaceTextureHelper = SurfaceTextureHelper.create("Ts6ScreenThread", eglBase.eglBaseContext)
+            videoSource = peerConnectionFactory.createVideoSource(/* isScreencast = */ true)
+
+            val capturer = ScreenCapturerAndroid(resultData, object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.i(TAG, "MediaProjection stopped by system")
+                    onBroadcastStoppedCallback?.invoke()
+                    stopBroadcast()
+                }
+            })
+
+            videoCapturer = capturer
+            cameraVideoCapturer = null
+            capturer.initialize(surfaceTextureHelper, context, videoSource?.capturerObserver)
+            capturer.startCapture(width, height, fps)
+
+            val track = peerConnectionFactory.createVideoTrack("ARDAMSv0", videoSource)
+            track.setEnabled(true)
+            localVideoTrackInternal = track
+            _localVideoTrack.value = track
+            _isBroadcastingScreen.value = true
+            _isBroadcasting.value = true
+            Log.i(TAG, "Screen broadcast started: streamId=$streamId (${width}x${height}@${fps}fps)")
+        } catch (error: Throwable) {
+            Log.e(TAG, "Failed to start screen broadcast", error)
+            stopBroadcast()
         }
     }
 
@@ -162,7 +210,7 @@ class WebRtcManager(
      * Toggles between front and back camera.
      */
     fun switchCamera() {
-        val capturer = videoCapturer ?: return
+        val capturer = cameraVideoCapturer ?: return
         capturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
             override fun onCameraSwitchDone(isFront: Boolean) {
                 _isFrontCamera.value = isFront
@@ -187,7 +235,16 @@ class WebRtcManager(
      * Stops broadcasting camera and closes active outbound peer connections.
      */
     fun stopCameraBroadcast() {
+        stopBroadcast()
+    }
+
+    fun stopScreenBroadcast() {
+        stopBroadcast()
+    }
+
+    fun stopBroadcast() {
         _isBroadcasting.value = false
+        _isBroadcastingScreen.value = false
         val stoppingStreamId = activeBroadcastStreamId
         activeBroadcastStreamId = null
 
@@ -197,7 +254,7 @@ class WebRtcManager(
             val viewerKeys = peerConnections.keys().toList().filter { it.endsWith(":$stoppingStreamId") }
             for (key in viewerKeys) {
                 peerConnections.remove(key)?.let { pc ->
-                    Log.i(TAG, "stopCameraBroadcast: closing viewer PeerConnection for $key")
+                    Log.i(TAG, "stopBroadcast: closing viewer PeerConnection for $key")
                     runCatching { pc.close() }
                     runCatching { pc.dispose() }
                 }
@@ -210,6 +267,7 @@ class WebRtcManager(
         } catch (ignored: Throwable) {}
         videoCapturer?.dispose()
         videoCapturer = null
+        cameraVideoCapturer = null
 
         localVideoTrackInternal?.dispose()
         localVideoTrackInternal = null
@@ -221,7 +279,7 @@ class WebRtcManager(
         surfaceTextureHelper?.dispose()
         surfaceTextureHelper = null
 
-        Log.i(TAG, "Camera broadcast stopped")
+        Log.i(TAG, "Broadcast stopped")
     }
 
     /**
