@@ -32,9 +32,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ScreenShare
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
@@ -43,6 +46,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
@@ -54,12 +59,14 @@ import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.Cameraswitch
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CropSquare
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.Person
@@ -69,10 +76,17 @@ import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.VideocamOff
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.Color
+import io.github.ts3mobile.app.service.StreamViewer
+import io.github.ts3mobile.app.service.WatchedStream
 import io.github.ts3mobile.app.video.WebRtcManager
 import io.github.ts3mobile.app.video.WebRtcVideoView
+import io.github.ts3mobile.protocol.StreamType
 import io.github.ts3mobile.protocol.Ts6StreamInfo
+import org.webrtc.EglBase
+import org.webrtc.RendererCommon
+import org.webrtc.VideoTrack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -83,6 +97,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -184,8 +200,75 @@ fun MainScreen(
     onToggleCameraBroadcast: () -> Unit = {},
     onSwitchCamera: () -> Unit = {},
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
-    onStopWatchingStream: () -> Unit = {},
+    onStopWatchingStream: (String?) -> Unit = {},
+    onAcceptViewer: (StreamViewer) -> Unit = {},
+    onRejectViewer: (StreamViewer) -> Unit = {},
+    onToggleAutoAcceptViewers: () -> Unit = {},
+    isLandscape: Boolean = false,
+    onToggleOrientation: (Boolean) -> Unit = {},
+    isInPip: Boolean = false,
 ) {
+    if (isInPip) {
+        val stream = serviceState.watchingStreams.lastOrNull()
+        val videoTrack = stream?.let { webRtcManager?.remoteVideoTracks?.value?.get(it.streamId) }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (videoTrack != null && webRtcManager != null) {
+                WebRtcVideoView(
+                    videoTrack = videoTrack,
+                    eglBaseContext = webRtcManager.eglBase.eglBaseContext,
+                    scalingType = RendererCommon.ScalingType.SCALE_ASPECT_FIT,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        return
+    }
+
+    var fullscreenStreamId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val activeWatchedStreams = serviceState.watchingStreams.ifEmpty {
+        serviceState.watchingStreamId?.let { sId ->
+            val streamer = serviceState.snapshot.participants.firstOrNull { it.id == serviceState.watchingStreamClientId }
+            val streamInfo = serviceState.snapshot.activeStreams.firstOrNull { it.streamId == sId }
+            listOf(
+                WatchedStream(
+                    streamId = sId,
+                    clientId = serviceState.watchingStreamClientId ?: 0,
+                    nickname = streamer?.nickname ?: "Vídeo",
+                    type = streamInfo?.type ?: StreamType.CAMERA,
+                    name = streamInfo?.description.orEmpty().ifEmpty {
+                        when (streamInfo?.type) {
+                            StreamType.SCREEN -> "Tela"
+                            StreamType.WINDOW -> "Janela"
+                            else -> "Câmera"
+                        }
+                    },
+                )
+            )
+        } ?: emptyList()
+    }
+
+    val fullscreenStream = activeWatchedStreams.firstOrNull { it.streamId == fullscreenStreamId }
+    if (fullscreenStream != null && webRtcManager != null) {
+        val remoteVideoTracks by webRtcManager.remoteVideoTracks.collectAsStateWithLifecycle()
+        FullscreenStreamOverlay(
+            stream = fullscreenStream,
+            allWatchedStreams = activeWatchedStreams,
+            videoTrack = remoteVideoTracks[fullscreenStream.streamId],
+            eglBaseContext = webRtcManager.eglBase.eglBaseContext,
+            onClose = { fullscreenStreamId = null },
+            onSelectStream = { fullscreenStreamId = it },
+            onToggleOrientation = onToggleOrientation,
+            isLandscape = isLandscape,
+        )
+        return
+    }
+
     var serverToDelete by remember { mutableStateOf<SavedServer?>(null) }
 
     Scaffold(
@@ -264,6 +347,12 @@ fun MainScreen(
                     onSwitchCamera = onSwitchCamera,
                     onWatchStream = onWatchStream,
                     onStopWatchingStream = onStopWatchingStream,
+                    onAcceptViewer = onAcceptViewer,
+                    onRejectViewer = onRejectViewer,
+                    onToggleAutoAcceptViewers = onToggleAutoAcceptViewers,
+                    isLandscape = isLandscape,
+                    onToggleOrientation = onToggleOrientation,
+                    onToggleFullscreen = { fullscreenStreamId = it },
                 )
             } else {
                 DisconnectedContent(
@@ -1140,7 +1229,13 @@ private fun ConnectedContent(
     onToggleCameraBroadcast: () -> Unit = {},
     onSwitchCamera: () -> Unit = {},
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
-    onStopWatchingStream: () -> Unit = {},
+    onStopWatchingStream: (String?) -> Unit = {},
+    onAcceptViewer: (StreamViewer) -> Unit = {},
+    onRejectViewer: (StreamViewer) -> Unit = {},
+    onToggleAutoAcceptViewers: () -> Unit = {},
+    isLandscape: Boolean = false,
+    onToggleOrientation: (Boolean) -> Unit = {},
+    onToggleFullscreen: (String) -> Unit = {},
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -1251,74 +1346,92 @@ private fun ConnectedContent(
 
         Box(Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize()) {
-                if (state.watchingStreamId != null && webRtcManager != null) {
-                    val remoteVideoTracks by webRtcManager.remoteVideoTracks.collectAsStateWithLifecycle()
-                    val remoteTrack = remoteVideoTracks[state.watchingStreamId]
-                    val streamer = state.snapshot.participants.firstOrNull { it.id == state.watchingStreamClientId }
-                    val streamerName = streamer?.nickname ?: "Vídeo ao vivo"
+                val activeWatchedStreams = state.watchingStreams.ifEmpty {
+                    state.watchingStreamId?.let { sId ->
+                        val streamer = state.snapshot.participants.firstOrNull { it.id == state.watchingStreamClientId }
+                        val streamInfo = state.snapshot.activeStreams.firstOrNull { it.streamId == sId }
+                        listOf(
+                            WatchedStream(
+                                streamId = sId,
+                                clientId = state.watchingStreamClientId ?: 0,
+                                nickname = streamer?.nickname ?: "Vídeo",
+                                type = streamInfo?.type ?: StreamType.CAMERA,
+                                name = streamInfo?.description.orEmpty().ifEmpty {
+                                    when (streamInfo?.type) {
+                                        StreamType.SCREEN -> "Tela"
+                                        StreamType.WINDOW -> "Janela"
+                                        else -> "Câmera"
+                                    }
+                                },
+                            )
+                        )
+                    } ?: emptyList()
+                }
 
+                if (activeWatchedStreams.isNotEmpty() && webRtcManager != null) {
+                    val remoteVideoTracks by webRtcManager.remoteVideoTracks.collectAsStateWithLifecycle()
+                    ActiveStreamsSection(
+                        watchedStreams = activeWatchedStreams,
+                        allActiveStreams = state.snapshot.activeStreams,
+                        participants = state.snapshot.participants,
+                        remoteVideoTracks = remoteVideoTracks,
+                        eglBaseContext = webRtcManager.eglBase.eglBaseContext,
+                        onWatchStream = onWatchStream,
+                        onStopWatchingStream = { streamId -> onStopWatchingStream(streamId) },
+                        isLandscape = isLandscape,
+                        onToggleOrientation = onToggleOrientation,
+                        onToggleFullscreen = onToggleFullscreen,
+                    )
+                } else if (state.snapshot.activeStreams.isNotEmpty()) {
+                    AvailableStreamsBanner(
+                        activeStreams = state.snapshot.activeStreams,
+                        participants = state.snapshot.participants,
+                        onWatchStream = onWatchStream,
+                    )
+                }
+
+                for (req in state.pendingViewerRequests) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(230.dp)
-                            .padding(8.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.Black),
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        shape = RoundedCornerShape(10.dp),
                     ) {
-                        Box(Modifier.fillMaxSize()) {
-                            if (remoteTrack != null) {
-                                WebRtcVideoView(
-                                    videoTrack = remoteTrack,
-                                    eglBaseContext = webRtcManager.eglBase.eglBaseContext,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(28.dp),
-                                            strokeWidth = 2.5.dp,
-                                            color = Color.White,
-                                        )
-                                        Text(
-                                            text = "Conectando ao vídeo de $streamerName...",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = Color.White.copy(alpha = 0.8f),
-                                        )
-                                    }
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.Black.copy(alpha = 0.5f))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    text = streamerName,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White,
+                                    text = "${req.nickname} pediu para assistir",
+                                    style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
-                                IconButton(
-                                    onClick = onStopWatchingStream,
-                                    modifier = Modifier.size(28.dp),
+                                Text(
+                                    text = "Transmitir vídeo para este usuário",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilledTonalButton(
+                                    onClick = { onRejectViewer(req) },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Fechar transmissão",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp),
-                                    )
+                                    Text("Recusar", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Button(
+                                    onClick = { onAcceptViewer(req) },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp),
+                                ) {
+                                    Text("Aceitar", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -1331,6 +1444,7 @@ private fun ConnectedContent(
                             state = state,
                             onJoinChannel = onJoinChannel,
                             onWatchStream = onWatchStream,
+                            onStopWatchingStream = { onStopWatchingStream(it) },
                         )
                     } else {
                         ParticipantList(
@@ -1338,6 +1452,7 @@ private fun ConnectedContent(
                             onMutedChange = onParticipantMutedChange,
                             onVolumeChange = onParticipantVolumeChange,
                             onWatchStream = onWatchStream,
+                            onStopWatchingStream = { onStopWatchingStream(it) },
                         )
                     }
 
@@ -1375,6 +1490,43 @@ private fun ConnectedContent(
                                             tint = Color.White,
                                             modifier = Modifier.size(15.dp),
                                         )
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .background(Color.Black.copy(alpha = 0.55f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Visibility,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(12.dp),
+                                            )
+                                            Text(
+                                                text = "${state.activeViewers.size}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.White,
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = onToggleAutoAcceptViewers,
+                                            modifier = Modifier.size(20.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = if (state.autoAcceptStreamViewers) Icons.Outlined.CheckCircle else Icons.Outlined.Lock,
+                                                contentDescription = if (state.autoAcceptStreamViewers) "Auto-aceitar ativado" else "Aprovação manual",
+                                                tint = if (state.autoAcceptStreamViewers) Color(0xFF4CAF50) else Color(0xFFFFC107),
+                                                modifier = Modifier.size(13.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1835,12 +1987,514 @@ private fun PushToTalkButton(
     }
 }
 
+@Composable
+private fun ActiveStreamsSection(
+    watchedStreams: List<WatchedStream>,
+    allActiveStreams: List<Ts6StreamInfo>,
+    participants: List<Ts3Participant>,
+    remoteVideoTracks: Map<String, VideoTrack>,
+    eglBaseContext: EglBase.Context,
+    onWatchStream: (remoteClientId: Int, streamId: String) -> Unit,
+    onStopWatchingStream: (String) -> Unit,
+    onToggleFullscreen: (String) -> Unit = {},
+    isLandscape: Boolean = false,
+    onToggleOrientation: (Boolean) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    var isGridView by rememberSaveable { mutableStateOf(false) }
+    var focusedStreamId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val currentFocused = watchedStreams.firstOrNull { it.streamId == focusedStreamId }
+        ?: watchedStreams.lastOrNull()
+    if (focusedStreamId != currentFocused?.streamId) {
+        focusedStreamId = currentFocused?.streamId
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (allActiveStreams.size > 1 || watchedStreams.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    for (stream in allActiveStreams) {
+                        val isWatched = watchedStreams.any { it.streamId == stream.streamId }
+                        val isFocused = stream.streamId == currentFocused?.streamId
+                        val streamer = participants.firstOrNull { it.id == stream.clientId }
+                        val streamerName = streamer?.nickname ?: "Usuário ${stream.clientId}"
+                        val streamTitle = stream.displayTitle()
+
+                        FilterChip(
+                            selected = isFocused,
+                            onClick = {
+                                if (!isWatched) {
+                                    onWatchStream(stream.clientId, stream.streamId)
+                                }
+                                focusedStreamId = stream.streamId
+                                if (isGridView && watchedStreams.size > 1) {
+                                    isGridView = false
+                                }
+                            },
+                            label = {
+                                Text(
+                                    text = "$streamerName: $streamTitle",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (stream.isScreenOrWindow) {
+                                        Icons.AutoMirrored.Outlined.ScreenShare
+                                    } else {
+                                        Icons.Filled.Videocam
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            },
+                            trailingIcon = if (isWatched) {
+                                {
+                                    IconButton(
+                                        onClick = { onStopWatchingStream(stream.streamId) },
+                                        modifier = Modifier.size(16.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Fechar transmissão",
+                                            modifier = Modifier.size(12.dp),
+                                        )
+                                    }
+                                }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                        )
+                    }
+                }
+
+                if (watchedStreams.size > 1) {
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(
+                        onClick = { isGridView = !isGridView },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (isGridView) Icons.Outlined.CropSquare else Icons.Filled.GridView,
+                            contentDescription = if (isGridView) "Modo foco" else "Modo grade",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        if (isGridView && watchedStreams.size > 1) {
+            when {
+                watchedStreams.size == 2 -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        for (stream in watchedStreams) {
+                            SingleStreamCard(
+                                stream = stream,
+                                videoTrack = remoteVideoTracks[stream.streamId],
+                                eglBaseContext = eglBaseContext,
+                                onClose = { onStopWatchingStream(stream.streamId) },
+                                onCardClick = {
+                                    focusedStreamId = stream.streamId
+                                    isGridView = false
+                                },
+                                onToggleFullscreen = {
+                                    onToggleFullscreen(stream.streamId)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    val row1 = watchedStreams.take(2)
+                    val row2 = watchedStreams.drop(2).take(2)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(125.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        for (stream in row1) {
+                            SingleStreamCard(
+                                stream = stream,
+                                videoTrack = remoteVideoTracks[stream.streamId],
+                                eglBaseContext = eglBaseContext,
+                                onClose = { onStopWatchingStream(stream.streamId) },
+                                onCardClick = {
+                                    focusedStreamId = stream.streamId
+                                    isGridView = false
+                                },
+                                onToggleFullscreen = {
+                                    onToggleFullscreen(stream.streamId)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(125.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        for (stream in row2) {
+                            SingleStreamCard(
+                                stream = stream,
+                                videoTrack = remoteVideoTracks[stream.streamId],
+                                eglBaseContext = eglBaseContext,
+                                onClose = { onStopWatchingStream(stream.streamId) },
+                                onCardClick = {
+                                    focusedStreamId = stream.streamId
+                                    isGridView = false
+                                },
+                                onToggleFullscreen = {
+                                    onToggleFullscreen(stream.streamId)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                            )
+                        }
+                        if (row2.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        } else {
+            currentFocused?.let { stream ->
+                val currentIndex = watchedStreams.indexOf(stream)
+                val totalCount = watchedStreams.size
+                val indexText = if (totalCount > 1) "${currentIndex + 1}/$totalCount" else null
+                val onPrev = if (totalCount > 1) {
+                    {
+                        val prevIdx = if (currentIndex - 1 < 0) totalCount - 1 else currentIndex - 1
+                        focusedStreamId = watchedStreams[prevIdx].streamId
+                    }
+                } else null
+                val onNext = if (totalCount > 1) {
+                    {
+                        val nextIdx = (currentIndex + 1) % totalCount
+                        focusedStreamId = watchedStreams[nextIdx].streamId
+                    }
+                } else null
+
+                SingleStreamCard(
+                    stream = stream,
+                    videoTrack = remoteVideoTracks[stream.streamId],
+                    eglBaseContext = eglBaseContext,
+                    onClose = { onStopWatchingStream(stream.streamId) },
+                    streamIndexText = indexText,
+                    onPreviousStream = onPrev,
+                    onNextStream = onNext,
+                    onToggleFullscreen = {
+                        onToggleFullscreen(stream.streamId)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(230.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AvailableStreamsBanner(
+    activeStreams: List<Ts6StreamInfo>,
+    participants: List<Ts3Participant>,
+    onWatchStream: (remoteClientId: Int, streamId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.LiveTv,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = "Transmissões ativas no canal (${activeStreams.size})",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (stream in activeStreams) {
+                    val streamer = participants.firstOrNull { it.id == stream.clientId }
+                    val streamerName = streamer?.nickname ?: "Usuário ${stream.clientId}"
+                    val streamTitle = stream.displayTitle()
+                    val icon = if (stream.isScreenOrWindow) {
+                        Icons.AutoMirrored.Outlined.ScreenShare
+                    } else {
+                        Icons.Filled.Videocam
+                    }
+
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Column {
+                                Text(
+                                    text = streamerName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "Transmissão: $streamTitle",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = { onWatchStream(stream.clientId, stream.streamId) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp),
+                            ) {
+                                Text("Assistir", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SingleStreamCard(
+    stream: WatchedStream,
+    videoTrack: VideoTrack?,
+    eglBaseContext: EglBase.Context,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    streamIndexText: String? = null,
+    onPreviousStream: (() -> Unit)? = null,
+    onNextStream: (() -> Unit)? = null,
+    onCardClick: (() -> Unit)? = null,
+    onToggleFullscreen: (() -> Unit)? = null,
+) {
+    val displayName = stream.nickname.ifBlank { "Vídeo" }
+    val streamTitle = stream.displayTitle()
+
+    Card(
+        modifier = modifier.then(if (onCardClick != null) Modifier.clickable { onCardClick() } else Modifier),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = if (videoTrack != null) Color.Transparent else Color.Black),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            if (videoTrack != null) {
+                WebRtcVideoView(
+                    videoTrack = videoTrack,
+                    eglBaseContext = eglBaseContext,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(6.dp),
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = "Conectando transmissão: $displayName ($streamTitle)...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            // Top overlay banner
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f, fill = false),
+                ) {
+                    Icon(
+                        imageVector = if (stream.isScreenOrWindow) {
+                            Icons.AutoMirrored.Outlined.ScreenShare
+                        } else {
+                            Icons.Filled.Videocam
+                        },
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Text(
+                        text = "$displayName • Transmissão: $streamTitle",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (streamIndexText != null) {
+                        Text(
+                            text = streamIndexText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(end = 4.dp),
+                        )
+                    }
+                    if (onPreviousStream != null) {
+                        IconButton(
+                            onClick = onPreviousStream,
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = "Transmissão anterior",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                    if (onNextStream != null) {
+                        IconButton(
+                            onClick = onNextStream,
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                                contentDescription = "Próxima transmissão",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                    if (onToggleFullscreen != null) {
+                        IconButton(
+                            onClick = onToggleFullscreen,
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "Tela cheia",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(24.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Fechar transmissão",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChannelList(
     state: TeamSpeakServiceState,
     onJoinChannel: (Int, String) -> Unit,
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
+    onStopWatchingStream: (String) -> Unit = {},
 ) {
     var passwordChannel by remember { mutableStateOf<io.github.ts3mobile.protocol.Ts3Channel?>(null) }
     var channelPassword by rememberSaveable { mutableStateOf("") }
@@ -2019,7 +2673,10 @@ private fun ChannelList(
                             isOwnClient = participant.id == state.snapshot.ownClientId,
                             depth = row.depth,
                             activeStreams = state.snapshot.activeStreams,
+                            watchingStreams = state.watchingStreams,
+                            watchingStreamId = state.watchingStreamId,
                             onWatchStream = onWatchStream,
+                            onStopWatchingStream = onStopWatchingStream,
                         )
                     }
                 }
@@ -2035,9 +2692,12 @@ private fun ChannelParticipantRow(
     isOwnClient: Boolean,
     depth: Int,
     activeStreams: List<Ts6StreamInfo> = emptyList(),
+    watchingStreams: List<WatchedStream> = emptyList(),
+    watchingStreamId: String? = null,
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
+    onStopWatchingStream: (String) -> Unit = {},
 ) {
-    val stream = activeStreams.firstOrNull { it.clientId == participant.id }
+    val clientStreams = activeStreams.filter { it.clientId == participant.id }
 
     Row(
         modifier = Modifier
@@ -2086,17 +2746,36 @@ private fun ChannelParticipantRow(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
-        } else if ((participant.hasActiveCamera || participant.hasActiveScreen) && stream != null) {
-            IconButton(
-                onClick = { onWatchStream(participant.id, stream.streamId) },
-                modifier = Modifier.size(30.dp),
-            ) {
-                Icon(
-                    imageVector = if (participant.hasActiveCamera) Icons.Filled.Videocam else Icons.AutoMirrored.Outlined.ScreenShare,
-                    contentDescription = if (participant.hasActiveCamera) "Assistir câmera de ${participant.nickname}" else "Assistir tela de ${participant.nickname}",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
+        } else {
+            for (stream in clientStreams) {
+                val isWatching = watchingStreams.any { it.streamId == stream.streamId } || watchingStreamId == stream.streamId
+                val streamTitle = stream.displayTitle()
+                val icon = if (stream.isScreenOrWindow) {
+                    Icons.AutoMirrored.Outlined.ScreenShare
+                } else {
+                    Icons.Filled.Videocam
+                }
+                IconButton(
+                    onClick = {
+                        if (isWatching) {
+                            onStopWatchingStream(stream.streamId)
+                        } else {
+                            onWatchStream(participant.id, stream.streamId)
+                        }
+                    },
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = if (isWatching) {
+                            "Parar de assistir transmissão: $streamTitle de ${participant.nickname}"
+                        } else {
+                            "Assistir transmissão: $streamTitle de ${participant.nickname}"
+                        },
+                        tint = if (isWatching) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }
@@ -2108,6 +2787,7 @@ private fun ParticipantList(
     onMutedChange: (String, Boolean) -> Unit,
     onVolumeChange: (String, Int) -> Unit,
     onWatchStream: (remoteClientId: Int, streamId: String) -> Unit = { _, _ -> },
+    onStopWatchingStream: (String) -> Unit = {},
 ) {
     val channelsById = remember(state.snapshot.channels) {
         state.snapshot.channels.associateBy { it.id }
@@ -2162,14 +2842,33 @@ private fun ParticipantList(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    val stream = state.snapshot.activeStreams.firstOrNull { it.clientId == participant.id }
-                    if (!isOwnClient && (participant.hasActiveCamera || participant.hasActiveScreen) && stream != null) {
-                        IconButton(onClick = { onWatchStream(participant.id, stream.streamId) }) {
-                            Icon(
-                                imageVector = if (participant.hasActiveCamera) Icons.Filled.Videocam else Icons.AutoMirrored.Outlined.ScreenShare,
-                                contentDescription = if (participant.hasActiveCamera) "Assistir câmera de ${participant.nickname}" else "Assistir tela de ${participant.nickname}",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                    val clientStreams = state.snapshot.activeStreams.filter { it.clientId == participant.id }
+                    if (!isOwnClient) {
+                        for (stream in clientStreams) {
+                            val isWatching = state.watchingStreams.any { it.streamId == stream.streamId } || state.watchingStreamId == stream.streamId
+                            val streamTitle = stream.displayTitle()
+                            val icon = if (stream.isScreenOrWindow) {
+                                Icons.AutoMirrored.Outlined.ScreenShare
+                            } else {
+                                Icons.Filled.Videocam
+                            }
+                            IconButton(onClick = {
+                                if (isWatching) {
+                                    onStopWatchingStream(stream.streamId)
+                                } else {
+                                    onWatchStream(participant.id, stream.streamId)
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = if (isWatching) {
+                                        "Parar transmissão: $streamTitle de ${participant.nickname}"
+                                    } else {
+                                        "Assistir transmissão: $streamTitle de ${participant.nickname}"
+                                    },
+                                    tint = if (isWatching) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
                     if (!isOwnClient) {

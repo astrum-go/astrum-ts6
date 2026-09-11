@@ -1,14 +1,19 @@
 package io.github.ts3mobile.app
 
 import android.Manifest
+import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Rational
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -36,6 +41,8 @@ class MainActivity : ComponentActivity() {
     private var pendingConnection: ServerConfig? = null
     private var pendingMicrophoneMode: MicrophoneMode? = null
     private var pushToTalkPressed = false
+    private var isLandscape by mutableStateOf(false)
+    private var isInPip by mutableStateOf(false)
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -80,6 +87,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         setContent {
             Ts3MobileTheme {
                 val fallbackState = remember { MutableStateFlow(TeamSpeakServiceState()) }
@@ -163,9 +176,21 @@ class MainActivity : ComponentActivity() {
                     onWatchStream = { clientId, streamId ->
                         serviceBinder?.watchStream(clientId, streamId)
                     },
-                    onStopWatchingStream = {
-                        serviceBinder?.stopWatchingStream()
+                    onStopWatchingStream = { streamId ->
+                        serviceBinder?.stopWatchingStream(streamId)
                     },
+                    onAcceptViewer = { viewer ->
+                        serviceBinder?.acceptViewerRequest(viewer)
+                    },
+                    onRejectViewer = { viewer ->
+                        serviceBinder?.rejectViewerRequest(viewer)
+                    },
+                    onToggleAutoAcceptViewers = {
+                        serviceBinder?.toggleAutoAcceptViewers()
+                    },
+                    isLandscape = isLandscape,
+                    onToggleOrientation = ::setOrientation,
+                    isInPip = isInPip,
                 )
             }
         }
@@ -251,5 +276,42 @@ class MainActivity : ComponentActivity() {
 
     private fun onSuppressionModeChanged(mode: SuppressionMode) {
         serviceBinder?.setSuppressionMode(mode)
+    }
+
+    private fun setOrientation(landscape: Boolean) {
+        isLandscape = landscape
+        requestedOrientation = if (landscape) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        isLandscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPip = isInPictureInPictureMode
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val hasStream = serviceBinder?.state?.value?.watchingStreams?.isNotEmpty() == true
+            || serviceBinder?.state?.value?.watchingStreamId != null
+        if (hasStream && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build()
+                enterPictureInPictureMode(params)
+            } catch (_: Exception) {
+            }
+        }
     }
 }
