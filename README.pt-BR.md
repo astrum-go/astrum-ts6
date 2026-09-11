@@ -14,6 +14,18 @@ Este projeto foi desenvolvido em decorrência do bloqueio e das instabilidades d
 
 ---
 
+## 🏛️ Origem e Créditos (Base do Projeto)
+
+Este projeto foi construído e expandido a partir da base pioneira desenvolvida por [monet4070/ts3-mobile](https://github.com/monet4070/ts3-mobile), cujo trabalho estabeleceu os alicerces fundamentais da arquitetura Android e a integração inicial de cliente TeamSpeak 3 via [Manevolent/ts3j](https://github.com/Manevolent/ts3j).
+
+### ✨ O Que Adicionamos e Evoluímos Nesta Versão Comunitária:
+- **Transmissão de Vídeo e Câmera WebRTC para TeamSpeak 6**: Implementação da camada WebRTC completa compatível com a sinalização do TS6, permitindo transmitir a câmera do celular (com rotação e orientação dinâmica física corretas) e assistir às transmissões dos outros participantes em tempo real com modo tela cheia e zoom por pinça.
+- **Compartilhamento de Tela Mobile com Áudio do Sistema**: Transmissão da tela do Android via `MediaProjection`, com suporte a captura e mixagem de som interno do celular (músicas e jogos no Android 10+) e presets customizáveis de resolução, FPS e bitrate.
+- **Pipeline Neural de Supressão de Ruído (Astrum Clarity)**: Integração de supressor de transientes, supressão por inteligência artificial com DeepFilterNet e RNNoise v0.2, expansor VoiceGate e controles de ganho individual por usuário.
+- **Reestruturação Visual Completa**: Redesenho completo da interface em Jetpack Compose com tema dark moderno, gerenciador de servidores salvos com conexão rápida, novo ícone oficial da Astrum e experiência de usuário fluida.
+
+---
+
 ## 🚀 Funcionalidades Atuais
 
 - **Identidade TeamSpeak**: Geração de identidade e armazenamento criptografado em AES-GCM via Android Keystore.

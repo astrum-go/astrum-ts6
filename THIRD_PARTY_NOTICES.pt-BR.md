@@ -4,6 +4,13 @@
 
 O TS6 Mobile Community incorpora ou depende dos seguintes softwares de terceiros. Cada componente permanece sujeito aos termos de sua própria licença.
 
+## ts3-mobile (monet4070)
+
+- Projeto: [monet4070/ts3-mobile](https://github.com/monet4070/ts3-mobile)
+- Autor original: monet
+- Licença original: Apache License 2.0 ([http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
+- Descrição: Base arquitetural inicial de cliente Android para TeamSpeak 3 sobre a qual o TS6 Mobile Community foi construído e expandido.
+
 ## ts3j
 
 - Projeto: [Manevolent/ts3j](https://github.com/Manevolent/ts3j)

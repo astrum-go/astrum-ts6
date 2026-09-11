@@ -18,6 +18,18 @@ This project was developed in response to blocks and connectivity disruptions af
 
 ---
 
+## 🏛️ Origins and Credits (Project Foundation)
+
+This project was built and evolved upon the foundation originally established by [monet4070/ts3-mobile](https://github.com/monet4070/ts3-mobile), which laid the essential mobile groundwork, initial Android architecture, and baseline TeamSpeak 3 client protocol integration via [Manevolent/ts3j](https://github.com/Manevolent/ts3j).
+
+### ✨ What Was Built and Evolved in This Community Edition:
+- **TeamSpeak 6 WebRTC Video & Camera Streaming**: Implementation of a complete WebRTC signaling and media layer compatible with TeamSpeak 6, allowing mobile camera broadcasting (with upright physical orientation and dynamic portrait/landscape adaptation) and multi-stream viewing with pinch-to-zoom and fullscreen overlays.
+- **Mobile Screen Sharing with System Audio**: Low-latency screen capture via Android's `MediaProjection`, featuring internal audio playback capture (Android 10+) to broadcast game/media sound directly alongside video, complete with customizable resolution, FPS, and bitrate presets.
+- **Neural Noise Suppression Pipeline (Astrum Clarity)**: Integration of transient suppression, neural AI denoising via DeepFilterNet and RNNoise v0.2, VoiceGate expander, and individual speaker gain controls.
+- **Complete Visual Re-engineering**: Total UI overhaul built with modern Jetpack Compose dark styling, bookmarked servers manager with quick-connect, new Astrum launcher icon branding, and intuitive mobile ergonomics.
+
+---
+
 ## Current milestone: M8 channel roster
 
 The current build provides:
