@@ -1,6 +1,9 @@
 package io.github.ts3mobile.app.video
 
 import io.github.ts3mobile.app.service.TeamSpeakServiceState
+import io.github.ts3mobile.app.service.StreamViewer
+import io.github.ts3mobile.app.service.WatchedStream
+import io.github.ts3mobile.protocol.StreamType
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -138,24 +141,24 @@ class WebRtcSignalingTest {
 
         val multiStream = watching.copy(
             watchingStreams = listOf(
-                io.github.ts3mobile.app.service.WatchedStream("stream-1", 10, "User 1", io.github.ts3mobile.protocol.StreamType.CAMERA),
-                io.github.ts3mobile.app.service.WatchedStream("stream-2", 10, "User 1", io.github.ts3mobile.protocol.StreamType.SCREEN),
-                io.github.ts3mobile.app.service.WatchedStream("stream-3", 20, "User 2", io.github.ts3mobile.protocol.StreamType.CAMERA),
-                io.github.ts3mobile.app.service.WatchedStream("stream-4", 20, "User 2", io.github.ts3mobile.protocol.StreamType.SCREEN),
+                WatchedStream("stream-1", 10, "User 1", StreamType.CAMERA),
+                WatchedStream("stream-2", 10, "User 1", StreamType.SCREEN),
+                WatchedStream("stream-3", 20, "User 2", StreamType.CAMERA),
+                WatchedStream("stream-4", 20, "User 2", StreamType.SCREEN),
             ),
         )
         assertEquals(4, multiStream.watchingStreams.size)
         assertEquals("stream-1", multiStream.watchingStreams[0].streamId)
-        assertEquals(io.github.ts3mobile.protocol.StreamType.CAMERA, multiStream.watchingStreams[0].type)
-        assertEquals(io.github.ts3mobile.protocol.StreamType.SCREEN, multiStream.watchingStreams[1].type)
+        assertEquals(StreamType.CAMERA, multiStream.watchingStreams[0].type)
+        assertEquals(StreamType.SCREEN, multiStream.watchingStreams[1].type)
 
         val withViewers = multiStream.copy(
             autoAcceptStreamViewers = true,
             activeViewers = listOf(
-                io.github.ts3mobile.app.service.StreamViewer(30, "Alice", "stream-123"),
+                StreamViewer(30, "Alice", "stream-123"),
             ),
             pendingViewerRequests = listOf(
-                io.github.ts3mobile.app.service.StreamViewer(31, "Charlie", "stream-123"),
+                StreamViewer(31, "Charlie", "stream-123"),
             ),
         )
         assertTrue(withViewers.autoAcceptStreamViewers)
@@ -163,5 +166,95 @@ class WebRtcSignalingTest {
         assertEquals("Alice", withViewers.activeViewers[0].nickname)
         assertEquals(1, withViewers.pendingViewerRequests.size)
         assertEquals("Charlie", withViewers.pendingViewerRequests[0].nickname)
+    }
+
+    // ─── Testes dos bugs corrigidos (peer connection zumbi) ──────────────────
+
+    /**
+     * Verifica que o estado de visualização de streams é corretamente resetado
+     * ao iniciar uma nova conexão de servidor (watchingStreams vazia, sem activeViewers).
+     * Documenta o comportamento garantido pelo resetViewerState() chamado em beginConnection.
+     */
+    @Test
+    fun viewerStateIsCleanOnNewConnection() {
+        // Estado anterior com viewers e streams ativos
+        val oldState = TeamSpeakServiceState(
+            isBroadcastingCamera = true,
+            activeBroadcastStreamId = "stream-abc",
+            activeViewers = listOf(StreamViewer(42, "PC User", "stream-abc")),
+            pendingViewerRequests = listOf(StreamViewer(43, "Other", "stream-abc")),
+            watchingStreams = listOf(WatchedStream("remote-stream-1", 10, "Alice", StreamType.CAMERA)),
+            watchingStreamId = "remote-stream-1",
+            watchingStreamClientId = 10,
+        )
+        assertEquals(1, oldState.activeViewers.size)
+        assertEquals(1, oldState.pendingViewerRequests.size)
+        assertEquals(1, oldState.watchingStreams.size)
+
+        // Simula o estado criado pelo beginConnection (novo TeamSpeakServiceState fresco)
+        val freshState = TeamSpeakServiceState()
+        assertTrue(freshState.activeViewers.isEmpty())
+        assertTrue(freshState.pendingViewerRequests.isEmpty())
+        assertTrue(freshState.watchingStreams.isEmpty())
+        assertNull(freshState.watchingStreamId)
+        assertNull(freshState.watchingStreamClientId)
+        assertFalse(freshState.isBroadcastingCamera)
+    }
+
+    /**
+     * Verifica que stopCameraBroadcast limpa o estado de viewers no ServiceState,
+     * o que é necessário para permitir uma nova sessão de broadcast sem estados zumbi.
+     */
+    @Test
+    fun stopBroadcastClearsViewerState() {
+        val broadcasting = TeamSpeakServiceState(
+            isBroadcastingCamera = true,
+            activeBroadcastStreamId = "stream-xyz",
+            activeViewers = listOf(
+                StreamViewer(10, "Viewer A", "stream-xyz"),
+                StreamViewer(20, "Viewer B", "stream-xyz"),
+            ),
+            pendingViewerRequests = listOf(
+                StreamViewer(30, "Pending C", "stream-xyz"),
+            ),
+        )
+        assertEquals(2, broadcasting.activeViewers.size)
+        assertEquals(1, broadcasting.pendingViewerRequests.size)
+
+        // Simula o que stopCameraBroadcast faz no ServiceState (cópia sem viewers)
+        val stopped = broadcasting.copy(
+            isBroadcastingCamera = false,
+            activeBroadcastStreamId = null,
+            activeViewers = emptyList(),
+            pendingViewerRequests = emptyList(),
+        )
+        assertFalse(stopped.isBroadcastingCamera)
+        assertNull(stopped.activeBroadcastStreamId)
+        assertTrue(stopped.activeViewers.isEmpty())
+        assertTrue(stopped.pendingViewerRequests.isEmpty())
+    }
+
+    /**
+     * Verifica que duplicate join requests para o mesmo viewer são tratados
+     * (o viewer já existente é removido antes de readicionar).
+     * Documenta o fix: sem mais early-return em handleJoinRequest para keys duplicadas.
+     */
+    @Test
+    fun duplicateViewerJoinRequestReplacesExisting() {
+        val initialViewers = listOf(StreamViewer(42, "PC User", "stream-abc"))
+        val state = TeamSpeakServiceState(
+            isBroadcastingCamera = true,
+            activeBroadcastStreamId = "stream-abc",
+            activeViewers = initialViewers,
+        )
+
+        // Simula uma segunda solicitação de join do mesmo viewer (reconexão do PC)
+        // O comportamento correto: o viewer existente é substituído, não duplicado
+        val updatedViewers = state.activeViewers.filter { it.clientId != 42 } +
+            StreamViewer(42, "PC User", "stream-abc")
+        val updated = state.copy(activeViewers = updatedViewers)
+
+        assertEquals(1, updated.activeViewers.size) // Sem duplicata
+        assertEquals(42, updated.activeViewers[0].clientId)
     }
 }

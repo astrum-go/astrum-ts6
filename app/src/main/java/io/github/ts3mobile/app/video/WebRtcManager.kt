@@ -181,7 +181,22 @@ class WebRtcManager(
      */
     fun stopCameraBroadcast() {
         _isBroadcasting.value = false
+        val stoppingStreamId = activeBroadcastStreamId
         activeBroadcastStreamId = null
+
+        // Fechar todas as peer connections de viewers associadas a este stream.
+        // Sem isso, ao reiniciar a câmera as PCs zumbis bloqueavam novos joins.
+        if (stoppingStreamId != null) {
+            val viewerKeys = peerConnections.keys().toList().filter { it.endsWith(":$stoppingStreamId") }
+            for (key in viewerKeys) {
+                peerConnections.remove(key)?.let { pc ->
+                    Log.i(TAG, "stopCameraBroadcast: closing viewer PeerConnection for $key")
+                    runCatching { pc.close() }
+                    runCatching { pc.dispose() }
+                }
+                pendingIceCandidates.remove(key)
+            }
+        }
 
         try {
             videoCapturer?.stopCapture()
@@ -250,7 +265,15 @@ class WebRtcManager(
             activeBroadcastStreamId = streamId
         }
         val key = peerKey(requesterClientId, streamId)
-        if (peerConnections.containsKey(key)) return
+        // Se já existe uma PC para este viewer (reconexão ou retry), fechar antes de recriar.
+        // Antes, havia um early-return aqui que causava freeze: o PC ficava aguardando uma
+        // resposta que nunca chegava pois a PC zumbi antiga bloqueava a criação de uma nova.
+        peerConnections.remove(key)?.let { stale ->
+            Log.w(TAG, "handleJoinRequest: closing stale PeerConnection for $key before recreating")
+            runCatching { stale.close() }
+            runCatching { stale.dispose() }
+            pendingIceCandidates.remove(key)
+        }
 
         val peerConnection = createPeerConnection(requesterClientId, streamId) ?: return
         peerConnections[key] = peerConnection
@@ -493,6 +516,23 @@ class WebRtcManager(
             }
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
                 Log.i(TAG, "PeerConnection State for $streamId from $targetClientId: $newState")
+                when (newState) {
+                    PeerConnection.PeerConnectionState.FAILED -> {
+                        // Limpar PC falha para que o próximo join request possa criar uma nova sem bloqueio
+                        Log.e(TAG, "PeerConnection FAILED for $streamId from $targetClientId — removing stale connection")
+                        val key = peerKey(targetClientId, streamId)
+                        peerConnections.remove(key)?.let { pc ->
+                            runCatching { pc.close() }
+                            runCatching { pc.dispose() }
+                        }
+                        pendingIceCandidates.remove(key)
+                    }
+                    PeerConnection.PeerConnectionState.DISCONNECTED ->
+                        Log.w(TAG, "PeerConnection DISCONNECTED for $streamId from $targetClientId — will auto-retry on next join request")
+                    PeerConnection.PeerConnectionState.CONNECTED ->
+                        Log.i(TAG, "PeerConnection CONNECTED for $streamId from $targetClientId ✓")
+                    else -> Unit
+                }
             }
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
@@ -567,6 +607,23 @@ class WebRtcManager(
         _remoteVideoTracks.value = emptyMap()
         runCatching { peerConnectionFactory.dispose() }
         runCatching { eglBase.release() }
+    }
+
+    /**
+     * Fecha todas as peer connections remotas (viewers e streams assistidos) sem tocar na câmera local.
+     * Chamado ao iniciar uma nova sessão de servidor para evitar conexões zumbi da sessão anterior.
+     */
+    fun resetViewerState() {
+        val keys = peerConnections.keys().toList()
+        for (key in keys) {
+            peerConnections.remove(key)?.let { pc ->
+                runCatching { pc.close() }
+                runCatching { pc.dispose() }
+            }
+        }
+        pendingIceCandidates.clear()
+        _remoteVideoTracks.value = emptyMap()
+        Log.i(TAG, "resetViewerState: all remote peer connections closed (${keys.size} total)")
     }
 
     private open class SimpleSdpObserver : SdpObserver {

@@ -244,6 +244,10 @@ class TeamSpeakService : Service() {
         }
         if (session != null) session?.close()
 
+        // Limpar peer connections remotas da sessão anterior (viewers e streams assistidos).
+        // Necessário para evitar que conexões zumbis bloqueiem novos join requests após reconexão.
+        webRtcManager.resetViewerState()
+
         connectionJob = serviceScope.launch {
             suppressionModePreferenceReady.await()
             transmitMutex.withLock { stopMicrophoneLocked() }

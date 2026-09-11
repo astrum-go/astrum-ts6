@@ -222,7 +222,10 @@ class Ts3jSessionClient : Ts3SessionClient {
                 latch.countDown()
             }
         }
-        latch.await(2000, TimeUnit.MILLISECONDS)
+        val completed = latch.await(5000, TimeUnit.MILLISECONDS)
+        if (!completed) {
+            logDiagnostic("startStream: TIMEOUT aguardando ID do servidor — usando fallback UUID")
+        }
         pendingStreamStartedLatch.set(null)
         val finalId = serverIdRef.get() ?: pendingStreamStartedId.get() ?: UUID.randomUUID().toString()
         logDiagnostic("startStream resolved id=$finalId")
