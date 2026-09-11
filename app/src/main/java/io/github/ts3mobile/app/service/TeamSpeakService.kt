@@ -473,7 +473,13 @@ class TeamSpeakService : Service() {
 
         override fun onStreamJoinRequested(streamId: String, remoteClientId: Int) {
             if (!isListenerActive(this)) return
-            if (!webRtcManager.isBroadcasting.value) {
+            // Usar o estado do serviço (atualizado pelo notifystreamstarted do servidor) em vez de
+            // webRtcManager.isBroadcasting, que só é setado depois do startCameraBroadcast() completar.
+            // A corrida entre o servidor notificando o PC e o celular completar o setup causava rejeição
+            // da 1ª tentativa de join, pois isBroadcasting ainda era false naquele momento.
+            val currentlyBroadcasting = mutableState.value.isBroadcastingCamera ||
+                webRtcManager.isBroadcasting.value
+            if (!currentlyBroadcasting) {
                 serviceScope.launch {
                     sessionMutex.withLock {
                         runCatching {
@@ -515,6 +521,7 @@ class TeamSpeakService : Service() {
 
         override fun onStreamClientLeft(streamId: String, clientId: Int) {
             if (!isListenerActive(this)) return
+            webRtcManager.stopViewer(clientId, streamId)
             mutableState.update { current ->
                 current.copy(
                     activeViewers = current.activeViewers.filter { it.clientId != clientId },

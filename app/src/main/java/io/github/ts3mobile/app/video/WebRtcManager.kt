@@ -5,9 +5,14 @@ import android.util.Log
 import io.github.ts3mobile.protocol.StreamType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.Camera2Enumerator
@@ -43,6 +48,8 @@ class WebRtcManager(
     private val respondJoinStreamCallback: ((targetClientId: Int, streamId: String, offer: String) -> Unit)? = null,
 ) {
     val eglBase: EglBase = EglBase.create()
+
+    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val peerConnectionFactory: PeerConnectionFactory
 
@@ -256,18 +263,32 @@ class WebRtcManager(
     }
 
     /**
+     * Closes the active peer connection for a viewer who disconnected or left the stream.
+     */
+    fun stopViewer(remoteClientId: Int, streamId: String) {
+        val key = peerKey(remoteClientId, streamId)
+        peerConnections.remove(key)?.let { pc ->
+            Log.i(TAG, "stopViewer: closing PeerConnection for $key")
+            runCatching { pc.close() }
+            runCatching { pc.dispose() }
+        }
+        pendingIceCandidates.remove(key)
+    }
+
+    /**
      * Handles an incoming join request from a remote client who wants to watch our stream.
+     *
+     * The captured TS6 broadcaster sends a video SEND_ONLY transceiver followed by
+     * an INACTIVE audio transceiver, even with audio capture disabled. The initial
+     * offer is carried by respondjoinstreamrequest; the viewer supplies the answer.
      */
     fun handleJoinRequest(requesterClientId: Int, streamId: String) {
-        if (!_isBroadcasting.value) return
-        if (activeBroadcastStreamId == null || activeBroadcastStreamId != streamId) {
-            Log.i(TAG, "handleJoinRequest: updating activeBroadcastStreamId from $activeBroadcastStreamId to $streamId")
-            activeBroadcastStreamId = streamId
+        if (activeBroadcastStreamId != streamId) {
+            Log.w(TAG, "handleJoinRequest: ignoring request for inactive stream $streamId")
+            return
         }
         val key = peerKey(requesterClientId, streamId)
         // Se já existe uma PC para este viewer (reconexão ou retry), fechar antes de recriar.
-        // Antes, havia um early-return aqui que causava freeze: o PC ficava aguardando uma
-        // resposta que nunca chegava pois a PC zumbi antiga bloqueava a criação de uma nova.
         peerConnections.remove(key)?.let { stale ->
             Log.w(TAG, "handleJoinRequest: closing stale PeerConnection for $key before recreating")
             runCatching { stale.close() }
@@ -278,32 +299,57 @@ class WebRtcManager(
         val peerConnection = createPeerConnection(requesterClientId, streamId) ?: return
         peerConnections[key] = peerConnection
 
-        val track = localVideoTrackInternal
-        if (track != null) {
-            peerConnection.addTrack(track, listOf("ARDAMS"))
-        }
-
-        val constraints = MediaConstraints()
-        peerConnection.createOffer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(desc: SessionDescription?) {
-                desc ?: return
-                peerConnection.setLocalDescription(SimpleSdpObserver(), desc)
-
-                val minifiedOffer = cleanOfferSdp(desc.description)
-
-                // 1. Respond to joinstreamrequest via TS3 protocol command (includes minified offer):
-                respondJoinStreamCallback?.invoke(requesterClientId, streamId, minifiedOffer)
-
-                // 2. Send streamsignaling offer in standard TS6 format:
-                val offerJson = JSONObject().apply {
-                    put("cmd", "offer")
-                    put("args", JSONObject().apply {
-                        put("offer", minifiedOffer)
-                    })
-                }.toString()
-                sendSignalingCallback(requesterClientId, streamId, offerJson)
+        managerScope.launch {
+            val track = withTimeoutOrNull(10_000) { _localVideoTrack.filterNotNull().first() }
+            if (track == null) {
+                Log.e(TAG, "handleJoinRequest: no local video track within 10s for $key, aborting")
+                if (peerConnections.remove(key, peerConnection)) {
+                    pendingIceCandidates.remove(key)
+                    runCatching { peerConnection.close() }
+                    runCatching { peerConnection.dispose() }
+                }
+                return@launch
             }
-        }, constraints)
+            // A retry or stop may have replaced/disposed this peer while capture started.
+            if (peerConnections[key] !== peerConnection || activeBroadcastStreamId != streamId) return@launch
+            peerConnection.addTransceiver(
+                track,
+                RtpTransceiver.RtpTransceiverInit(
+                    RtpTransceiver.RtpTransceiverDirection.SEND_ONLY,
+                    listOf("outgoing_video"),
+                ),
+            )
+            peerConnection.addTransceiver(
+                MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO,
+                RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.INACTIVE),
+            )
+            Log.i(TAG, "handleJoinRequest: local track ready, creating offer for $key")
+
+            val constraints = MediaConstraints()
+            peerConnection.createOffer(object : SimpleSdpObserver() {
+                override fun onCreateSuccess(desc: SessionDescription?) {
+                    desc ?: return
+                    if (peerConnections[key] !== peerConnection || activeBroadcastStreamId != streamId) return
+                    peerConnection.setLocalDescription(object : SimpleSdpObserver() {
+                        override fun onSetSuccess() {
+                            if (peerConnections[key] !== peerConnection || activeBroadcastStreamId != streamId) return
+                            // Preserve the exact codec/payload mapping accepted locally. RTP
+                            // payload IDs are negotiated, not fixed identifiers for codecs.
+                            val offerSdp = if (desc.description.endsWith("\r\n")) desc.description else desc.description.trimEnd() + "\r\n"
+                            Log.i(TAG, "Local broadcast offer ready for $key: length=${offerSdp.length}, video=sendonly, audio=inactive")
+                            respondJoinStreamCallback?.invoke(requesterClientId, streamId, offerSdp)
+                        }
+
+                        override fun onSetFailure(error: String?) {
+                            Log.e(TAG, "Broadcast setLocalDescription failed for $key: $error")
+                        }
+                    }, desc)
+                }
+                override fun onCreateFailure(error: String?) {
+                    Log.e(TAG, "handleJoinRequest: createOffer failed for $key: $error")
+                }
+            }, constraints)
+        }
     }
 
     /**
@@ -360,6 +406,13 @@ class WebRtcManager(
                             Log.e(TAG, "setRemoteDescription (ANSWER) failed for $key: $error")
                         }
                     }, remoteDesc)
+                } else {
+                    Log.e(TAG, "Remote client returned an empty SDP answer for $key; cleaning up PeerConnection")
+                    peerConnections.remove(key)?.apply {
+                        runCatching { close() }
+                        runCatching { dispose() }
+                    }
+                    pendingIceCandidates.remove(key)
                 }
             } else if (hasCandidate) {
                 val candObj = args ?: json.optJSONObject("candidate") ?: json.optJSONObject("iceCandidate")
@@ -399,34 +452,6 @@ class WebRtcManager(
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .joinToString("\r\n") + "\r\n"
-    }
-
-    fun cleanOfferSdp(sdp: String): String {
-        val lines = sdp.replace("\r\n", "\n").replace("\r", "\n").lines()
-        val keptPayloads = setOf("96", "97", "104", "105") // VP8 (96/97) and H264 baseline (104/105)
-        val result = mutableListOf<String>()
-
-        for (rawLine in lines) {
-            val line = rawLine.trim()
-            if (line.isEmpty()) continue
-            if (line.startsWith("m=video")) {
-                val parts = line.split(" ")
-                if (parts.size > 3) {
-                    val payloads = parts.subList(3, parts.size).filter { it in keptPayloads }
-                    result.add(parts.subList(0, 3).joinToString(" ") + " " + payloads.joinToString(" "))
-                    continue
-                }
-            } else if (line.startsWith("a=rtpmap:") || line.startsWith("a=rtcp-fb:") || line.startsWith("a=fmtp:")) {
-                val colonIdx = line.indexOf(':')
-                val spaceIdx = line.indexOf(' ', colonIdx)
-                val pt = if (spaceIdx != -1) line.substring(colonIdx + 1, spaceIdx) else line.substring(colonIdx + 1)
-                if (pt !in keptPayloads) continue
-            } else if (line.startsWith("a=candidate:")) {
-                continue
-            }
-            result.add(line)
-        }
-        return result.joinToString("\r\n") + "\r\n"
     }
 
     fun cleanAnswerSdp(sdp: String): String {
@@ -597,6 +622,7 @@ class WebRtcManager(
     private fun peerKey(clientId: Int, streamId: String) = "$clientId:$streamId"
 
     fun close() {
+        managerScope.cancel()
         stopCameraBroadcast()
         for ((_, pc) in peerConnections) {
             runCatching { pc.close() }
