@@ -121,5 +121,19 @@ class Ts6StreamProtocolTest {
         assertTrue(builtJoin.startsWith("joinstreamrequest"))
         assertTrue(builtJoin.contains("clid=99"))
         assertTrue(builtJoin.contains("streamid=test-uuid"))
+
+        val sdpWithCrLf = "v=0\r\no=- 123 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
+        val cmdWithTs3Param = SingleCommand(
+            "respondjoinstreamrequest",
+            ProtocolRole.CLIENT,
+            listOf(Ts3jSessionClient.Ts3Parameter("offer", sdpWithCrLf)),
+        )
+        val builtCommand = cmdWithTs3Param.build()
+        assertTrue("SDP offer parameter must preserve escaped \\r\\n at the end", builtCommand.endsWith("\\r\\n"))
+
+        val parsed = SingleCommand.parse(ProtocolRole.SERVER, builtCommand)
+        val parsedOffer = parsed["offer"].value
+        assertEquals("Parsed SDP offer must match original with trailing CRLF", sdpWithCrLf, parsedOffer)
+        assertTrue(parsedOffer.endsWith("\r\n"))
     }
 }

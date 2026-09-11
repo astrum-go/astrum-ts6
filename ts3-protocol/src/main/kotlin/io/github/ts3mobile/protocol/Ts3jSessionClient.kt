@@ -2,7 +2,9 @@ package io.github.ts3mobile.protocol
 
 import com.github.manevolent.ts3j.command.CommandException
 import com.github.manevolent.ts3j.command.SingleCommand
+import com.github.manevolent.ts3j.command.parameter.CommandParameter
 import com.github.manevolent.ts3j.command.parameter.CommandSingleParameter
+import com.github.manevolent.ts3j.util.Ts3String
 import com.github.manevolent.ts3j.audio.Microphone
 import com.github.manevolent.ts3j.event.ChannelCreateEvent
 import com.github.manevolent.ts3j.event.ChannelDeletedEvent
@@ -269,7 +271,8 @@ class Ts3jSessionClient : Ts3SessionClient {
             "msg" to "",
         )
         if (!offer.isNullOrBlank()) {
-            params.add("offer" to offer)
+            val formattedOffer = if (offer.endsWith("\r\n")) offer else offer.trimEnd() + "\r\n"
+            params.add("offer" to formattedOffer)
         }
         params.add("decision" to if (allow) "1" else "0")
         sendRawCommand("respondjoinstreamrequest", *params.toTypedArray())
@@ -302,7 +305,7 @@ class Ts3jSessionClient : Ts3SessionClient {
             val cmd = SingleCommand(
                 name,
                 ProtocolRole.CLIENT,
-                params.map { (k, v) -> CommandSingleParameter(k, v) },
+                params.map { (k, v) -> Ts3Parameter(k, v) },
             )
             val paramStr = params.joinToString(" ") { "${it.first}=${it.second}" }
             logDiagnostic("-> SEND [$name]: $paramStr")
@@ -320,6 +323,29 @@ class Ts3jSessionClient : Ts3SessionClient {
         } catch (error: Throwable) {
             logFailure("failed to send command $name", error)
         }
+    }
+
+    /**
+     * Preserves exact parameter values without calling .trim() before escaping.
+     * Standard CommandSingleParameter.toString() trims whitespace, stripping
+     * required trailing CRLF from SDP descriptions, which breaks WebRTC parsing.
+     */
+    internal class Ts3Parameter(
+        private val key: String,
+        private var value: String,
+    ) : CommandParameter {
+        override fun getName(): String = key
+        override fun getValue(): String = value
+        override fun set(p0: Char) { value = p0.toString() }
+        override fun set(p0: String?) { value = p0.orEmpty() }
+        override fun set(p0: Boolean) { value = if (p0) "1" else "0" }
+        override fun set(p0: Byte) { value = p0.toString() }
+        override fun set(p0: Short) { value = p0.toString() }
+        override fun set(p0: Int) { value = p0.toString() }
+        override fun set(p0: Long) { value = p0.toString() }
+        override fun set(p0: Float) { value = p0.toString() }
+        override fun set(p0: Double) { value = p0.toString() }
+        override fun toString(): String = "$key=${Ts3String.escape(value)}"
     }
 
     private fun queryActiveStreams(client: LocalTeamspeakClientSocket) {
