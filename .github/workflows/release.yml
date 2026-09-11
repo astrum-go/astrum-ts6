@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to release (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run tests and assemble APK
+        run: >-
+          ./gradlew
+          :ts6-protocol:test
+          :audio-opus:testDebugUnitTest
+          :app:testDebugUnitTest
+          :app:assembleDebug
+          --stacktrace
+
+      - name: Prepare APK Asset
+        id: prepare_asset
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="${{ github.event.inputs.tag_name || 'v1.0.0' }}"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          APK_NAME="Astrum-TS6-${TAG}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "./${APK_NAME}"
+          echo "APK_NAME=${APK_NAME}" >> $GITHUB_ENV
+
+      - name: Generate Release Notes
+        run: |
+          cat << 'EOF' > RELEASE_NOTES.md
+          # 🚀 Astrum TS6 ${{ env.TAG }}
+
+          Bem-vindo ao lançamento oficial do **Astrum TS6**! Um cliente Android de código aberto, moderno e de alto desempenho para **TeamSpeak 6**, trazendo recursos de comunicação por voz, vídeo e transmissão de tela para a palma da sua mão.
+
+          ---
+
+          ### 💡 A Motivação por Trás do Projeto
+          Este aplicativo foi desenvolvido em resposta aos bloqueios e instabilidades recentes de acesso ao Discord no Brasil. A necessidade de uma alternativa confiável, privada e autônoma para assistir a vídeos juntos, conversar e transmitir gameplays do celular (especialmente para jogar com minha namorada de forma legítima e estável) impulsionou a evolução desta plataforma utilizando a infraestrutura robusta do TeamSpeak 6.
+
+          ---
+
+          ### ✨ Principais Recursos desta Versão
+          - 📹 **Transmissão de Câmera WebRTC para TS6**:
+            - Suporte total à sinalização de vídeo do TeamSpeak 6.
+            - Transmissão fluida da câmera traseira e frontal com orientação física dinâmica correta em retrato e paisagem.
+            - Visualização de múltiplos participantes na chamada com modo tela cheia e gestos intuitivos de pinça (*pinch-to-zoom*).
+          - 📱 **Compartilhamento de Tela com Áudio Interno do Celular**:
+            - Transmissão em tempo real da tela do seu Android via `MediaProjection`.
+            - Captura e mixagem nativa de áudio do sistema (jogos, músicas e vídeos no Android 10+ via `AudioPlaybackCapture`).
+            - Presets otimizados de resolução, FPS e bitrate para economizar bateria e largura de banda.
+          - 🎙️ **Astrum Clarity (Pipeline Neural de Supressão de Ruído)**:
+            - Filtro de ruídos por inteligência artificial com DeepFilterNet e RNNoise v0.2.
+            - Supressor de transientes para teclado e impactos.
+            - VoiceGate adaptativo com controle individual de volume por usuário na sala.
+          - 🎨 **Interface Moderna & Ergonomia Redesenhada**:
+            - Construído inteiramente com **Jetpack Compose** e tema escuro refinado.
+            - Gerenciador de servidores favoritos com conexão em 1 toque.
+            - Identidade visual e novo ícone exclusivo da Astrum.
+
+          ---
+
+          ### 🏛️ Origens e Créditos
+          - Agradecimento especial ao projeto [monet4070/ts3-mobile](https://github.com/monet4070/ts3-mobile), cuja arquitetura Android inicial serviu de fundação sobre a qual o Astrum TS6 foi expandido.
+          - Protocolo TeamSpeak desenvolvido por [Manevolent/ts3j](https://github.com/Manevolent/ts3j).
+
+          ---
+
+          ### 📥 Como Instalar no Android
+          1. Baixe o arquivo **`${{ env.APK_NAME }}`** listado na seção de *Assets* abaixo.
+          2. No seu dispositivo Android, abra o arquivo baixado.
+          3. Caso solicitado, permita a instalação a partir do seu navegador ou gerenciador de arquivos (*Fontes desconhecidas*).
+          4. Abra o **Astrum TS6**, adicione seu servidor favorito e aproveite!
+
+          ---
+
+          ### ⚖️ Licença
+          Distribuído sob a licença **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Create release or update if exists
+          if gh release view "${{ env.TAG }}" >/dev/null 2>&1; then
+            echo "Release ${{ env.TAG }} already exists. Uploading asset and updating notes..."
+            gh release upload "${{ env.TAG }}" "${{ env.APK_NAME }}" --clobber
+            gh release edit "${{ env.TAG }}" --notes-file RELEASE_NOTES.md
+          else
+            echo "Creating new release for ${{ env.TAG }}..."
+            gh release create "${{ env.TAG }}" \
+              --title "Astrum TS6 ${{ env.TAG }}" \
+              --notes-file RELEASE_NOTES.md \
+              "${{ env.APK_NAME }}"
+          fi
