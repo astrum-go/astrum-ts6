@@ -1,3 +1,5 @@
+🌐 [English](README.md) · [Português (Brasil)](README.pt-BR.md)
+
 # TS6 Mobile Community
 
 TS6 Mobile Community is an open-source Android client for TeamSpeak,

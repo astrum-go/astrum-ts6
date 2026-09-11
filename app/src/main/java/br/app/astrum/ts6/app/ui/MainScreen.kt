@@ -1,4 +1,4 @@
-﻿package br.app.astrum.ts6.app.ui
+package br.app.astrum.ts6.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -2016,7 +2016,7 @@ private fun MicrophoneControl(
                                             )
                                             Text(
                                                 text = when (suppressionMode) {
-                                                    SuppressionMode.ASTRUM_CLARITY -> "Anti-teclado mecânico e cliques instantâneos"
+                                                    SuppressionMode.ASTRUM_CLARITY -> "IA neural avançada com anti-teclado e cliques"
                                                     SuppressionMode.RNNOISE -> "Filtro neural clássico leve para voz"
                                                     SuppressionMode.DEEPFILTER -> "Rede neural profunda de alta qualidade"
                                                     SuppressionMode.NOISE_SUPPRESSOR -> "Cancelador de ruído do hardware do celular"
@@ -2047,7 +2047,7 @@ private fun MicrophoneControl(
                                 val options = listOf(
                                     SuppressionMode.ASTRUM_CLARITY to Pair(
                                         "Astrum Clarity (Recomendado)",
-                                        "Anti-teclado mecânico e cliques instantâneos",
+                                        "IA neural avançada com anti-teclado e cliques",
                                     ),
                                     SuppressionMode.RNNOISE to Pair(
                                         "RNNoise",

@@ -59,7 +59,7 @@ class RnNoisePreferenceTest {
     }
 
     @Test
-    fun restoresPersistedClarityValue() {
+    fun restoresPersistedAstrumClarityValue() {
         val preferenceState = SuppressionModePreferenceState()
 
         assertEquals(SuppressionMode.ASTRUM_CLARITY, preferenceState.restore(persistedValue = SuppressionMode.ASTRUM_CLARITY))

@@ -1,4 +1,4 @@
-﻿package br.app.astrum.ts6.audio.opus
+package br.app.astrum.ts6.audio.opus
 
 import android.Manifest
 import android.annotation.SuppressLint

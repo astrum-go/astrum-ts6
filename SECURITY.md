@@ -1,8 +1,10 @@
+🌐 [English](SECURITY.md) · [Português (Brasil)](SECURITY.pt-BR.md)
+
 # Security Policy
 
 ## Supported versions
 
-TS3 Mobile is pre-release software. Security fixes are applied only to the
+TS6 Mobile Community is pre-release software. Security fixes are applied only to the
 latest revision on the `main` branch; older milestones are not supported.
 
 ## Reporting a vulnerability

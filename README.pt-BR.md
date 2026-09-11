@@ -1,0 +1,52 @@
+﻿🌐 [English](README.md) · [Português (Brasil)](README.pt-BR.md)
+
+# TS6 Mobile Community
+
+O **TS6 Mobile Community** é um cliente Android de código aberto para TeamSpeak, construído sobre o protocolo de cliente completo fornecido pelo [Manevolent/ts3j](https://github.com/Manevolent/ts3j), com suporte a chamadas de voz e transmissões de vídeo e tela WebRTC compatíveis com o TeamSpeak 6.
+
+Este é um projeto comunitário não oficial. Não é afiliado, endossado ou patrocinado pela TeamSpeak Systems GmbH. TeamSpeak e nomes/marcas relacionados são de propriedade de seus respectivos titulares.
+
+---
+
+## 🚀 Funcionalidades Atuais
+
+- **Identidade TeamSpeak**: Geração de identidade e armazenamento criptografado em AES-GCM via Android Keystore.
+- **Conexão em Primeiro Plano (Foreground Service)**: Notificação persistente com ações de controle rápido e desconexão.
+- **Árvore Hierárquica de Canais**:
+  - Visualização expansível de canais e lista direta de membros conectados.
+  - Toque único para expandir e toque duplo para entrar no canal (com suporte a senha).
+- **Áudio de Alta Qualidade (Opus + RNNoise + DeepFilterNet)**:
+  - Suporte a `OPUS_VOICE` e `OPUS_MUSIC` através da biblioteca nativa `libopus`.
+  - Jitter buffer por usuário, ocultação de perda de pacotes (PLC) e mixagem PCM.
+  - Modos de microfone: Sempre Desativado, Pressionar para Falar (PTT) e Contínuo.
+  - Supressão de ruído avançada por IA com RNNoise v0.2 e DeepFilterNet.
+  - Roteamento de áudio dinâmico (auricular, alto-falante, fone com fio, Bluetooth SCO e USB).
+  - Ganho individual por usuário (0% a 200%) e silenciamento individual salvo por identidade única.
+- **Transmissão de Vídeo e Tela (WebRTC para TeamSpeak 6)**:
+  - **Compartilhamento de Câmera**: Orientação física corrigida (vídeo em pé tanto no celular quanto no PC) e alternância dinâmica entre modo retrato `[  | |  ]` e paisagem `[    ]`.
+  - **Compartilhamento de Tela**: Transmissão da tela do celular via MediaProjection com encoders VP8/H.264 otimizados para texto e fluidez.
+  - **Áudio Interno do Sistema (Android 10+)**: Compartilhamento de áudio de jogos e mídias mixado diretamente na transmissão.
+  - **Presets de Transmissão**: 720p @ 30fps, 1080p @ 30fps, 720p @ 60fps e 480p @ 30fps com controle de bitrate.
+  - **Visualização de Transmissões**: Assista às transmissões de câmera e tela dos membros do canal em tempo real, com modo tela cheia e zoom por pinça.
+
+---
+
+## 🔒 Privacidade
+
+O projeto não inclui analytics, anúncios, telemetria, SDKs de rastreamento de falhas ou servidores intermediários gerenciados pelo projeto. O aplicativo conecta-se diretamente aos servidores escolhidos pelo usuário. A identidade TeamSpeak é criptografada localmente via Android Keystore.
+
+Consulte o documento completo em [PRIVACY.pt-BR.md](PRIVACY.pt-BR.md).
+
+---
+
+## 📁 Estrutura de Módulos
+
+- `app`: Interface Jetpack Compose, ciclo de vida Android, serviço em primeiro plano e integração WebRTC.
+- `ts6-protocol`: Facade JVM do protocolo ts3j, modelos de domínio, sessões e ordenação da árvore de canais.
+- `audio-opus`: Codec nativo libopus via JNI, captura, cancelamento de ruído por IA (RNNoise/DeepFilterNet), jitter buffer e roteamento de áudio Android.
+
+---
+
+## 🛠️ Compilação e Desenvolvimento
+
+Consulte o guia de contribuição em [CONTRIBUTING.pt-BR.md](CONTRIBUTING.pt-BR.md) para instruções detalhadas de compilação com JDK 17 e Android SDK/NDK.

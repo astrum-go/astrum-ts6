@@ -1,3 +1,5 @@
+🌐 [English](CHANGELOG.md) · [Português (Brasil)](CHANGELOG.pt-BR.md)
+
 # Changelog
 
 This project follows milestone-style pre-release versioning while core protocol

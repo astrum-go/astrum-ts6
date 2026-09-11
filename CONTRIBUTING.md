@@ -1,3 +1,5 @@
+🌐 [English](CONTRIBUTING.md) · [Português (Brasil)](CONTRIBUTING.pt-BR.md)
+
 # Contributing
 
 Thanks for helping improve TS6 Mobile Community. This is an open-source client, so

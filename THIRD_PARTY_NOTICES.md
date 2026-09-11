@@ -1,6 +1,8 @@
+🌐 [English](THIRD_PARTY_NOTICES.md) · [Português (Brasil)](THIRD_PARTY_NOTICES.pt-BR.md)
+
 # Third-Party Notices
 
-TS3 Mobile incorporates or depends on the following third-party software. Each
+TS6 Mobile Community incorporates or depends on the following third-party software. Each
 component remains subject to its own license.
 
 ## ts3j
