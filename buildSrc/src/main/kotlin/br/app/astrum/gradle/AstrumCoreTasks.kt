@@ -10,7 +10,6 @@ import java.util.zip.ZipFile
 import javax.inject.Inject
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
-import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
@@ -18,8 +17,8 @@ import org.gradle.work.DisableCachingByDefault
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
-import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -56,10 +55,6 @@ abstract class BuildAstrumCoreTask @Inject constructor(
 
     @get:Input
     abstract val rustDirectoryPath: Property<String>
-
-    @get:InputFiles
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val rustInputs: ConfigurableFileCollection
 
     @get:Optional
     @get:InputDirectory
@@ -183,21 +178,59 @@ abstract class BuildAstrumCoreTask @Inject constructor(
     }
 }
 
+abstract class WriteAstrumCoreRuntimeMarkerTask : DefaultTask() {
+    @get:Input
+    abstract val runtimeEnabled: Property<Boolean>
+
+    @get:OutputFile
+    abstract val markerFile: RegularFileProperty
+
+    @TaskAction
+    fun writeMarker() {
+        val file = markerFile.get().asFile
+        file.parentFile.mkdirs()
+        file.writeText("${runtimeEnabled.get()}\n", StandardCharsets.UTF_8)
+    }
+}
+
 abstract class InspectAstrumCoreApkTask : DefaultTask() {
+    @get:Input
+    abstract val runtimeEnabled: Property<Boolean>
+
     @get:InputFile
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val apkFile: RegularFileProperty
 
+    @get:Optional
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val generatedLibraries: DirectoryProperty
 
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val runtimeMarker: RegularFileProperty
+
     @TaskAction
     fun inspect() {
+        val expectedRuntimeMarker = "${runtimeEnabled.get()}\n"
+        check(runtimeMarker.get().asFile.readText(StandardCharsets.UTF_8) == expectedRuntimeMarker) {
+            "Generated Astrum Core runtime marker does not match the requested runtime mode"
+        }
+        check(runtimeEnabled.get()) {
+            "inspectAstrumCoreApk requires -PastrumCoreRuntime=true; Rust runtime is disabled"
+        }
         val expectedEntries = rustAndroidTargets.map { target ->
             "lib/${target.abi}/$ASTRUM_CORE_LIBRARY"
         }.toSet()
         ZipFile(apkFile.get().asFile).use { apk ->
+            val apkMarkerEntry = apk.getEntry("assets/astrum-core-runtime-mode.txt")
+                ?: error("APK is missing the Astrum Core runtime marker")
+            val apkMarker = apk.getInputStream(apkMarkerEntry).use { it.readBytes().toString(StandardCharsets.UTF_8) }
+            check(apkMarker == expectedRuntimeMarker) {
+                "APK Astrum Core runtime marker is $apkMarker, expected $expectedRuntimeMarker"
+            }
+            logger.lifecycle("Astrum Core runtime marker: ${apkMarker.trim()}")
+
             val actualEntries = apk.entries().asSequence()
                 .filter { !it.isDirectory && it.name.startsWith("lib/") && it.name.endsWith("/$ASTRUM_CORE_LIBRARY") }
                 .map { it.name }

@@ -2,6 +2,7 @@ import org.gradle.api.file.Directory
 import org.gradle.api.provider.Provider
 import br.app.astrum.gradle.BuildAstrumCoreTask
 import br.app.astrum.gradle.InspectAstrumCoreApkTask
+import br.app.astrum.gradle.WriteAstrumCoreRuntimeMarkerTask
 
 plugins {
     alias(libs.plugins.android.application)
@@ -13,8 +14,7 @@ private val ASTRUM_CORE_REVISION = "52001dd2738e1509253b5264012ef907f940e938"
 private val ANDROID_NDK_VERSION = "27.0.12077973"
 private val rustAndroidAbis = listOf("arm64-v8a", "x86_64")
 
-val astrumCoreDir: Provider<Directory> = providers.gradleProperty("astrumCoreDir")
-    .map { project.layout.projectDirectory.dir(it) }
+val astrumCoreDirPath = providers.gradleProperty("astrumCoreDir")
 val astrumCoreRuntime = providers.gradleProperty("astrumCoreRuntime")
     .map { value ->
         when (value) {
@@ -27,12 +27,14 @@ val astrumCoreRuntime = providers.gradleProperty("astrumCoreRuntime")
     }
     .orElse(false)
     .get()
-if (astrumCoreRuntime && !astrumCoreDir.isPresent) {
+if (astrumCoreRuntime && !astrumCoreDirPath.isPresent) {
     throw GradleException(
         "-PastrumCoreRuntime=true requires -PastrumCoreDir so libastrum_core.so can be packaged",
     )
 }
 val astrumCoreEnabled = astrumCoreRuntime
+val astrumCoreRuntimeMarkerDirectory = layout.buildDirectory.dir("generated/astrumCore")
+val astrumCoreRuntimeMarkerFile = astrumCoreRuntimeMarkerDirectory.map { it.file("astrum-core-runtime-mode.txt") }
 val androidNdkDirectory: Provider<Directory> = providers.environmentVariable("ANDROID_NDK_ROOT")
     .orElse(
         providers.environmentVariable("ANDROID_HOME")
@@ -120,6 +122,11 @@ android {
             }
         }
     }
+    sourceSets {
+        getByName("main") {
+            assets.srcDir(astrumCoreRuntimeMarkerDirectory)
+        }
+    }
 
     packaging {
         jniLibs.keepDebugSymbols += "**/libastrum_core.so"
@@ -160,22 +167,31 @@ dependencies {
 }
 
 val buildAstrumCore = tasks.register<BuildAstrumCoreTask>("buildAstrumCore") {
-    rustDirectory.set(astrumCoreDir)
-    rustDirectoryPath.set(providers.gradleProperty("astrumCoreDir").orElse(""))
-    rustInputs.from(
-        astrumCoreDir.map { directory ->
-            project.fileTree(directory.asFile) {
-                exclude(".git/**", "target/**", "build/**")
-            }
-        },
-    )
+    if (astrumCoreDirPath.isPresent) {
+        rustDirectory.set(layout.projectDirectory.dir(astrumCoreDirPath.get()))
+    }
+    rustDirectoryPath.set(astrumCoreDirPath.orElse(""))
     ndkDirectory.set(androidNdkDirectory)
     expectedRevision.set(ASTRUM_CORE_REVISION)
     ndkVersion.set(ANDROID_NDK_VERSION)
     outputDirectory.set(cargoJniLibs)
 }
 
+val writeAstrumCoreRuntimeMarker = tasks.register<WriteAstrumCoreRuntimeMarkerTask>("writeAstrumCoreRuntimeMarker") {
+    runtimeEnabled.set(astrumCoreRuntime)
+    markerFile.set(astrumCoreRuntimeMarkerFile)
+}
+
 tasks.configureEach {
+    if (name.endsWith("BuildConfig")) {
+        inputs.property("astrumCoreRuntime", astrumCoreRuntime)
+    }
+    if (name == "assemble" || name.startsWith("assemble") ||
+        name == "package" || name.startsWith("package") ||
+        (name.startsWith("merge") && name.endsWith("Assets"))
+    ) {
+        dependsOn(writeAstrumCoreRuntimeMarker)
+    }
     if (astrumCoreEnabled) {
         if (name == "assemble" || name.startsWith("assemble") ||
             name == "package" || name.startsWith("package")
@@ -189,7 +205,12 @@ tasks.configureEach {
 }
 
 tasks.register<InspectAstrumCoreApkTask>("inspectAstrumCoreApk") {
-    dependsOn(buildAstrumCore, "assembleDebug")
+    dependsOn(writeAstrumCoreRuntimeMarker, "assembleDebug")
+    if (astrumCoreEnabled) {
+        dependsOn(buildAstrumCore)
+    }
+    runtimeEnabled.set(astrumCoreRuntime)
     apkFile.set(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
     generatedLibraries.set(cargoJniLibs)
+    runtimeMarker.set(astrumCoreRuntimeMarkerFile)
 }
