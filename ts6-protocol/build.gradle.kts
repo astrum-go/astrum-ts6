@@ -19,6 +19,7 @@ kotlin {
 dependencies {
     implementation(libs.ts3j)
     implementation(libs.kotlinx.coroutines.core)
+    implementation("org.json:json:20240303")
 
     testImplementation(libs.junit)
 }

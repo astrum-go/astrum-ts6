@@ -1,5 +1,36 @@
 ﻿package br.app.astrum.ts6.protocol
 
+import java.util.concurrent.TimeUnit
+
+internal class StreamInfoDiscovery(
+    private val nowNanos: () -> Long = System::nanoTime,
+    private val cooldownNanos: Long = TimeUnit.SECONDS.toNanos(1),
+) {
+    private data class RequestKey(val generation: Long, val clientId: Int, val channelId: Int)
+
+    private val requestedAt = mutableMapOf<RequestKey, Long>()
+
+    @Synchronized
+    fun shouldRequest(generation: Long, clientId: Int, channelId: Int): Boolean {
+        val now = nowNanos()
+        requestedAt.entries.removeIf { now - it.value >= cooldownNanos }
+        val key = RequestKey(generation, clientId, channelId)
+        if (requestedAt.containsKey(key)) return false
+        requestedAt[key] = now
+        return true
+    }
+
+    @Synchronized
+    fun clear() {
+        requestedAt.clear()
+    }
+
+    @Synchronized
+    fun removeClient(clientId: Int) {
+        requestedAt.keys.removeIf { it.clientId == clientId }
+    }
+}
+
 internal class SessionSnapshotStore {
     private val lock = Any()
     private val channels = linkedMapOf<Int, Ts3Channel>()
@@ -16,6 +47,11 @@ internal class SessionSnapshotStore {
         channels[channel.id] = channel
     }
 
+    fun replaceChannels(snapshot: Collection<Ts3Channel>) = synchronized(lock) {
+        channels.clear()
+        snapshot.forEach { channels[it.id] = it }
+    }
+
     fun updateChannel(id: Int, transform: (Ts3Channel) -> Ts3Channel) = synchronized(lock) {
         channels[id]?.let { channels[id] = transform(it) }
     }
@@ -24,17 +60,35 @@ internal class SessionSnapshotStore {
         channels.remove(id)
     }
 
-    fun putParticipant(participant: Ts3Participant) = synchronized(lock) {
+    fun putParticipant(participant: Ts3Participant): Boolean = synchronized(lock) {
+        val isNew = !participants.containsKey(participant.id)
         participants[participant.id] = participant
+        isNew
+    }
+
+    fun replaceParticipants(snapshot: Collection<Ts3Participant>) = synchronized(lock) {
+        participants.clear()
+        snapshot.forEach { participants[it.id] = it }
     }
 
     fun updateParticipant(id: Int, transform: (Ts3Participant) -> Ts3Participant) = synchronized(lock) {
         participants[id]?.let { participants[id] = transform(it) }
     }
 
+    fun updateOrInsertParticipant(
+        id: Int,
+        transform: (Ts3Participant?) -> Ts3Participant,
+    ) = synchronized(lock) {
+        participants[id] = transform(participants[id])
+    }
+
     fun removeParticipant(id: Int) = synchronized(lock) {
         participants.remove(id)
         streams.values.filter { it.clientId == id }.forEach { streams.remove(it.streamId) }
+    }
+
+    fun participant(id: Int): Ts3Participant? = synchronized(lock) {
+        participants[id]
     }
 
     fun putStream(stream: Ts6StreamInfo) = synchronized(lock) {
