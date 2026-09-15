@@ -306,6 +306,7 @@ class AstrumCoreSessionClient(
 
             // Loop de envio de áudio do microfone para o Rust via JNI
             val voiceTx = Thread({
+                var sendFailureLogged = false
                 while (running.get() && connectionGeneration.get() == generation) {
                     val source = voiceSource
                     if (sessionReady.get() && source != null && source.isReady()) {
@@ -314,13 +315,34 @@ class AstrumCoreSessionClient(
                             val sent = try {
                                 bindings.sendVoice(sid, 4 /* OPUS_VOICE */, frame)
                             } catch (error: Throwable) {
-                                failNativeVoice(generation, IOException("AstrumCore sendVoice failed", error))
-                                break
+                                if (!sendFailureLogged) {
+                                    System.err.println(
+                                        "AstrumCoreSessionClient: sendVoice rejeitou frame: ${error.message}",
+                                    )
+                                    sendFailureLogged = true
+                                }
+                                false
                             }
                             if (!sent) {
-                                failNativeVoice(generation, IOException("AstrumCore sendVoice returned false"))
-                                break
+                                if (!sendFailureLogged) {
+                                    System.err.println(
+                                        "AstrumCoreSessionClient: sendVoice retornou false; descartando frame",
+                                    )
+                                    sendFailureLogged = true
+                                }
+                                // sendVoice is a per-frame JNI operation. A rejection does
+                                // not confirm that the session ended; the event loop remains
+                                // authoritative for terminal connection state. Drop this
+                                // frame and keep the voice lifecycle alive for a transient
+                                // native/send failure.
+                                try {
+                                    Thread.sleep(15)
+                                } catch (ie: InterruptedException) {
+                                    break
+                                }
+                                continue
                             }
+                            sendFailureLogged = false
                             try {
                                 Thread.sleep(15)
                             } catch (ie: InterruptedException) {
@@ -631,12 +653,6 @@ class AstrumCoreSessionClient(
         connectedLatch.countDown()
         failPendingStreamStarts(IllegalStateException(terminalStatus.detail ?: "Native session ended"))
         emitTerminalOnce(generation, terminalStatus.detail ?: "Native session ended", terminalListener, terminalStatus)
-    }
-
-    private fun failNativeVoice(generation: Long, failure: IOException) {
-        val status = ConnectionStatus(ConnectionPhase.ERROR, failure.message, retryable = true)
-        listenerForGeneration(generation)?.onStatusChanged(status)
-        disconnectInternal("Native voice transmission failed", status)
     }
 
     private fun publishSnapshot(generation: Long? = null) {

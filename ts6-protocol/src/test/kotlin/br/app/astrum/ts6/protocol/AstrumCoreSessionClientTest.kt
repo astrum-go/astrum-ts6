@@ -104,7 +104,7 @@ class AstrumCoreSessionClientTest {
     }
 
     @Test
-    fun sendVoiceFalseIsReportedAndTerminatesTheSession() {
+    fun sendVoiceFalseDoesNotTerminateTheSession() {
         val native = FakeBindings(sendVoiceResult = false)
         val listener = RecordingListener()
         val client = AstrumCoreSessionClient(native)
@@ -115,9 +115,8 @@ class AstrumCoreSessionClientTest {
         connectReady(client, native, listener)
 
         assertTrue(native.voiceAttempt.await(1000, TimeUnit.MILLISECONDS))
-        assertTrue(listener.statuses.any {
-            it.phase == ConnectionPhase.ERROR && it.detail?.contains("sendVoice") == true
-        })
+        assertEquals(ConnectionPhase.CONNECTED, listener.statuses.last().phase)
+        assertTrue(listener.statuses.none { it.phase == ConnectionPhase.ERROR })
         client.close()
     }
 
