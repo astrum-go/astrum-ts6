@@ -15,6 +15,7 @@ private val rustAndroidAbis = listOf("arm64-v8a", "x86_64")
 
 val astrumCoreDir: Provider<Directory> = providers.gradleProperty("astrumCoreDir")
     .map { project.layout.projectDirectory.dir(it) }
+val astrumCoreEnabled = providers.gradleProperty("astrumCoreDir").isPresent
 val androidNdkDirectory: Provider<Directory> = providers.environmentVariable("ANDROID_NDK_ROOT")
     .orElse(
         providers.environmentVariable("ANDROID_HOME")
@@ -93,9 +94,11 @@ android {
         buildConfig = true
     }
 
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDir(cargoJniLibs)
+    if (astrumCoreEnabled) {
+        sourceSets {
+            getByName("main") {
+                jniLibs.srcDir(cargoJniLibs)
+            }
         }
     }
 
@@ -154,13 +157,15 @@ val buildAstrumCore = tasks.register<BuildAstrumCoreTask>("buildAstrumCore") {
 }
 
 tasks.configureEach {
-    if (name == "assemble" || name.startsWith("assemble") ||
-        name == "package" || name.startsWith("package")
-    ) {
-        dependsOn(buildAstrumCore)
-    }
-    if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
-        dependsOn(buildAstrumCore)
+    if (astrumCoreEnabled) {
+        if (name == "assemble" || name.startsWith("assemble") ||
+            name == "package" || name.startsWith("package")
+        ) {
+            dependsOn(buildAstrumCore)
+        }
+        if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
+            dependsOn(buildAstrumCore)
+        }
     }
 }
 

@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.Properties
 import java.util.zip.ZipFile
 import javax.inject.Inject
 import org.gradle.api.DefaultTask
@@ -13,7 +14,7 @@ import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
-import org.gradle.api.tasks.CacheableTask
+import org.gradle.work.DisableCachingByDefault
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
@@ -40,10 +41,14 @@ private val rustAndroidTargets = listOf(
     RustAndroidTarget("x86_64", "x86_64-linux-android", "x86_64-linux-android26-clang"),
 )
 
-@CacheableTask
+@DisableCachingByDefault(because = "Validates the external Git checkout and Android toolchain on every invocation")
 abstract class BuildAstrumCoreTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {
+    init {
+        outputs.upToDateWhen { false }
+    }
+
     @get:Optional
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
@@ -104,6 +109,19 @@ abstract class BuildAstrumCoreTask @Inject constructor(
             )
         if (!ndkDir.isDirectory) {
             throw GradleException("Android NDK directory does not exist: ${ndkDir.absolutePath}")
+        }
+        val sourcePropertiesFile = ndkDir.resolve("source.properties")
+        if (!sourcePropertiesFile.isFile) {
+            throw GradleException("Android NDK source.properties does not exist: ${sourcePropertiesFile.absolutePath}")
+        }
+        val sourceProperties = Properties()
+        sourcePropertiesFile.inputStream().use(sourceProperties::load)
+        val actualNdkVersion = sourceProperties.getProperty("Pkg.Revision")
+        if (actualNdkVersion != ndkVersion.get()) {
+            throw GradleException(
+                "Android NDK must declare Pkg.Revision=${ndkVersion.get()} in " +
+                    "${sourcePropertiesFile.absolutePath}, but it declares ${actualNdkVersion ?: "<missing>"}",
+            )
         }
         val llvmBin = ndkDir.resolve("toolchains/llvm/prebuilt/linux-x86_64/bin")
         val linkers = rustAndroidTargets.associateWith { target ->
