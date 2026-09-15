@@ -46,6 +46,7 @@ class AstrumCoreSessionClientTest {
 
             connect.join(1000)
             assertFalse(connect.isAlive)
+            assertTrue(listener.errorReported.await(1000, TimeUnit.MILLISECONDS))
             val status = listener.statuses.last { it.phase == ConnectionPhase.ERROR }
             assertTrue(status.detail?.contains(expectedDetail) == true)
             assertEquals(DisconnectResult.Failure, status.disconnectResult)
@@ -61,6 +62,7 @@ class AstrumCoreSessionClientTest {
         closedNative.emit(NativePollResult.ReceiverClosed)
         closedConnect.join(1000)
         assertFalse(closedConnect.isAlive)
+        assertTrue(closedListener.errorReported.await(1000, TimeUnit.MILLISECONDS))
         assertTrue(closedListener.statuses.any { it.phase == ConnectionPhase.ERROR })
         closedClient.close()
 
@@ -72,6 +74,7 @@ class AstrumCoreSessionClientTest {
         errorNative.emit(NativePollResult.Error(IOException("poll boom")))
         errorConnect.join(1000)
         assertFalse(errorConnect.isAlive)
+        assertTrue(errorListener.errorReported.await(1000, TimeUnit.MILLISECONDS))
         assertTrue(errorListener.statuses.any { it.phase == ConnectionPhase.ERROR })
         errorClient.close()
     }
@@ -150,9 +153,11 @@ class AstrumCoreSessionClientTest {
 
     private class RecordingListener : Ts3SessionListener {
         val statuses = CopyOnWriteArrayList<ConnectionStatus>()
+        val errorReported = CountDownLatch(1)
 
         override fun onStatusChanged(status: ConnectionStatus) {
             statuses += status
+            if (status.phase == ConnectionPhase.ERROR) errorReported.countDown()
         }
 
         override fun onSnapshotChanged(snapshot: SessionSnapshot) = Unit
