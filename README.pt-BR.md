@@ -68,3 +68,20 @@ Consulte o documento completo em [PRIVACY.pt-BR.md](PRIVACY.pt-BR.md).
 ## 🛠️ Compilação e Desenvolvimento
 
 Consulte o guia de contribuição em [CONTRIBUTING.pt-BR.md](CONTRIBUTING.pt-BR.md) para instruções detalhadas de compilação com JDK 17 e Android SDK/NDK.
+
+### Backend UniFFI experimental
+
+O backend UniFFI do Astrum Core é opt-in e cobre apenas sessão e voz Opus nesta
+fase. O caminho padrão continua sendo ts3j/JNI; servidores com senha também
+continuam no ts3j. Para gerar o APK experimental:
+
+```bash
+./gradlew :app:assembleDebug :app:inspectAstrumCoreApk \
+  -PastrumCoreDir=/caminho/para/astrum-core \
+  -PastrumCoreRuntime=true \
+  -PastrumCoreBackend=uniffi
+```
+
+Canais, presença e streams ainda não estão disponíveis nesse backend e falham
+explicitamente, em vez de serem tratados como operações bem-sucedidas. O core
+revisado para esta fatia é `abfd54d`.

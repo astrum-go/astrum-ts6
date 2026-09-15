@@ -42,4 +42,28 @@ class SessionClientSelectionTest {
             ),
         )
     }
+
+    @Test
+    fun explicitUniFfiBackendIsOptInForPasswordlessServer() {
+        assertEquals(
+            SessionClientKind.UNIFFI,
+            selectSessionClientKind("uniffi", ServerConfig("host", nickname = "Tester")),
+        )
+    }
+
+    @Test
+    fun explicitUniFfiBackendFallsBackForPasswordProtectedServer() {
+        assertEquals(
+            SessionClientKind.TS3J,
+            selectSessionClientKind(
+                "uniffi",
+                ServerConfig("host", nickname = "Tester", password = "secret"),
+            ),
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun unknownExplicitBackendIsRejected() {
+        selectSessionClientKind("unknown", ServerConfig("host", nickname = "Tester"))
+    }
 }

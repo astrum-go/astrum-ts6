@@ -33,6 +33,20 @@ if (astrumCoreRuntime && !astrumCoreDirPath.isPresent) {
     )
 }
 val astrumCoreEnabled = astrumCoreRuntime
+val astrumCoreBackend = providers.gradleProperty("astrumCoreBackend")
+    .map { value ->
+        when (value.trim().lowercase()) {
+            "", "ts3j", "jni", "uniffi" -> value.trim().lowercase().ifEmpty { "jni" }
+            else -> throw GradleException(
+                "astrumCoreBackend must be one of ts3j, jni, or uniffi, but was: $value",
+            )
+        }
+    }
+    .orElse("jni")
+    .get()
+if (astrumCoreBackend == "uniffi" && !astrumCoreRuntime) {
+    throw GradleException("astrumCoreBackend=uniffi requires -PastrumCoreRuntime=true")
+}
 val astrumCoreRuntimeMarkerDirectory = layout.buildDirectory.dir("generated/astrumCore")
 val astrumCoreRuntimeMarkerFile = astrumCoreRuntimeMarkerDirectory.map { it.file("astrum-core-runtime-mode.txt") }
 val androidNdkDirectory: Provider<Directory> = providers.environmentVariable("ANDROID_NDK_ROOT")
@@ -55,6 +69,7 @@ android {
         versionName = "1.0.0"
 
         buildConfigField("boolean", "ASTRUM_CORE_RUNTIME", astrumCoreRuntime.toString())
+        buildConfigField("String", "ASTRUM_CORE_BACKEND", "\"$astrumCoreBackend\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

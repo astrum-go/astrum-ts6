@@ -15,6 +15,8 @@ class AstrumCoreMobileSession internal constructor(
         val host: String,
         val port: Int = 9987,
         val nickname: String,
+        /** Optional TS3 identity material. Passwords are intentionally not part of this API. */
+        val identity: String? = null,
     )
 
     enum class State {
@@ -62,7 +64,7 @@ class AstrumCoreMobileSession internal constructor(
     suspend fun close(reason: String): CloseResult = delegate.close(reason)
 
     companion object {
-        /** Test seam that does not construct or load the generated JNI binding. */
+        /** Test seam that does not construct or load the generated UniFFI binding. */
         internal fun forTesting(delegate: Delegate): AstrumCoreMobileSession =
             AstrumCoreMobileSession(delegate)
     }

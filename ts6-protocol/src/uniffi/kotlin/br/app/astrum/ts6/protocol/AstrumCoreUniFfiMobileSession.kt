@@ -16,12 +16,12 @@ object AstrumCoreUniFfiMobileSession {
                 host = config.host,
                 port = config.port.toUShort(),
                 nickname = config.nickname,
-                identity = null,
+                identity = config.identity,
             ),
         )
 
         override fun config(): AstrumCoreMobileSession.Config = session.config().let {
-            AstrumCoreMobileSession.Config(it.host, it.port.toInt(), it.nickname)
+            AstrumCoreMobileSession.Config(it.host, it.port.toInt(), it.nickname, it.identity)
         }
 
         override fun state(): AstrumCoreMobileSession.State = when (session.state()) {

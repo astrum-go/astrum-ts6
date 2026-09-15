@@ -308,10 +308,9 @@ class TeamSpeakService : Service() {
             audioPlayer.replaceParticipantGains(emptyMap())
             audioPlayer.start()
 
-            val newSession = when (selectSessionClientKind(BuildConfig.ASTRUM_CORE_RUNTIME, config)) {
-                SessionClientKind.ASTRUM_CORE -> AstrumCoreSessionClient()
-                SessionClientKind.TS3J -> Ts3jSessionClient()
-            }
+            val newSession = createSessionClient(
+                selectSessionClientKind(BuildConfig.ASTRUM_CORE_BACKEND, config),
+            )
             val listener = SessionListener(epoch, reconnecting)
             activeListener = listener
             session = newSession
