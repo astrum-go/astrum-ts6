@@ -15,7 +15,24 @@ private val rustAndroidAbis = listOf("arm64-v8a", "x86_64")
 
 val astrumCoreDir: Provider<Directory> = providers.gradleProperty("astrumCoreDir")
     .map { project.layout.projectDirectory.dir(it) }
-val astrumCoreEnabled = providers.gradleProperty("astrumCoreDir").isPresent
+val astrumCoreRuntime = providers.gradleProperty("astrumCoreRuntime")
+    .map { value ->
+        when (value) {
+            "true" -> true
+            "false" -> false
+            else -> throw GradleException(
+                "astrumCoreRuntime must be explicitly true or false, but was: $value",
+            )
+        }
+    }
+    .orElse(false)
+    .get()
+if (astrumCoreRuntime && !astrumCoreDir.isPresent) {
+    throw GradleException(
+        "-PastrumCoreRuntime=true requires -PastrumCoreDir so libastrum_core.so can be packaged",
+    )
+}
+val astrumCoreEnabled = astrumCoreRuntime
 val androidNdkDirectory: Provider<Directory> = providers.environmentVariable("ANDROID_NDK_ROOT")
     .orElse(
         providers.environmentVariable("ANDROID_HOME")
@@ -34,6 +51,8 @@ android {
         targetSdk = 35
         versionCode = 10
         versionName = "1.0.0"
+
+        buildConfigField("boolean", "ASTRUM_CORE_RUNTIME", astrumCoreRuntime.toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

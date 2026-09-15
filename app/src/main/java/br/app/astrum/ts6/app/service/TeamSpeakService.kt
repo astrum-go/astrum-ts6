@@ -26,6 +26,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import br.app.astrum.ts6.app.MainActivity
 import br.app.astrum.ts6.app.R
+import br.app.astrum.ts6.app.BuildConfig
 import br.app.astrum.ts6.app.identity.IdentityVault
 import br.app.astrum.ts6.app.video.WebRtcManager
 import br.app.astrum.ts6.audio.opus.AudioDeviceRouter
@@ -36,6 +37,7 @@ import br.app.astrum.ts6.audio.opus.AudioRoutingState
 import br.app.astrum.ts6.audio.opus.SuppressionMode
 import br.app.astrum.ts6.protocol.ConnectionPhase
 import br.app.astrum.ts6.protocol.ConnectionStatus
+import br.app.astrum.ts6.protocol.AstrumCoreSessionClient
 import br.app.astrum.ts6.protocol.ServerConfig
 import br.app.astrum.ts6.protocol.SessionSnapshot
 import br.app.astrum.ts6.protocol.StreamPreset
@@ -306,7 +308,10 @@ class TeamSpeakService : Service() {
             audioPlayer.replaceParticipantGains(emptyMap())
             audioPlayer.start()
 
-            val newSession = Ts3jSessionClient()
+            val newSession = when (selectSessionClientKind(BuildConfig.ASTRUM_CORE_RUNTIME, config)) {
+                SessionClientKind.ASTRUM_CORE -> AstrumCoreSessionClient()
+                SessionClientKind.TS3J -> Ts3jSessionClient()
+            }
             val listener = SessionListener(epoch, reconnecting)
             activeListener = listener
             session = newSession

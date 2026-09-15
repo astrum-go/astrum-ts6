@@ -122,9 +122,11 @@ two packaged ABIs without committing native binaries:
 
 ```bash
 ./gradlew :app:assembleDebug \
-  -PastrumCoreDir=/path/to/clean/astrum-core
+  -PastrumCoreDir=/path/to/clean/astrum-core \
+  -PastrumCoreRuntime=true
 ./gradlew :app:inspectAstrumCoreApk \
-  -PastrumCoreDir=/path/to/clean/astrum-core
+  -PastrumCoreDir=/path/to/clean/astrum-core \
+  -PastrumCoreRuntime=true
 ```
 
 The task uses `ANDROID_NDK_ROOT`, or
