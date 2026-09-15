@@ -22,4 +22,5 @@ dependencies {
     implementation("org.json:json:20240303")
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
