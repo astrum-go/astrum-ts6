@@ -100,6 +100,7 @@ android {
     }
 
     packaging {
+        jniLibs.keepDebugSymbols += "**/libastrum_core.so"
         resources.excludes += setOf(
             "META-INF/DEPENDENCIES",
             "META-INF/LICENSE",
@@ -156,6 +157,9 @@ tasks.configureEach {
     if (name == "assemble" || name.startsWith("assemble") ||
         name == "package" || name.startsWith("package")
     ) {
+        dependsOn(buildAstrumCore)
+    }
+    if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
         dependsOn(buildAstrumCore)
     }
 }

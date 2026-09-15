@@ -130,6 +130,7 @@ abstract class BuildAstrumCoreTask @Inject constructor(
                     "build",
                     "--locked",
                     "--release",
+                    "--lib",
                     "--target",
                     target.triple,
                     "--target-dir",
