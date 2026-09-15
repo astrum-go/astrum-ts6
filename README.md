@@ -113,6 +113,29 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 GitHub Actions runs the JVM/unit tests, lint, and debug build for every pull
 request and push to `main`.
 
+### Optional Rust core APK integration
+
+The app does not activate `AstrumCoreSessionClient` by default. When a clean
+`astrum-core` checkout at revision
+`52001dd2738e1509253b5264012ef907f940e938` is available, Cargo can build the
+two packaged ABIs without committing native binaries:
+
+```bash
+./gradlew :app:assembleDebug \
+  -PastrumCoreDir=/path/to/clean/astrum-core
+./gradlew :app:inspectAstrumCoreApk \
+  -PastrumCoreDir=/path/to/clean/astrum-core
+```
+
+The task uses `ANDROID_NDK_ROOT`, or
+`ANDROID_HOME/ndk/27.0.12077973` as a fallback, and writes generated libraries
+under `app/build/generated/cargo/jniLibs/`. It refuses to run if the supplied
+checkout has a different `HEAD` or any tracked/untracked changes; in
+particular, a dirty checkout must not be used for this build. The inspection
+task verifies that the debug APK contains only the expected `astrum_core`
+library entries for `arm64-v8a` and `x86_64`, and compares their SHA-256 hashes
+with the generated outputs.
+
 ## Contributing and security
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change and follow

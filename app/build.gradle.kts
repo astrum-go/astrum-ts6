@@ -1,8 +1,27 @@
+import org.gradle.api.file.Directory
+import org.gradle.api.provider.Provider
+import br.app.astrum.gradle.BuildAstrumCoreTask
+import br.app.astrum.gradle.InspectAstrumCoreApkTask
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
+
+private val ASTRUM_CORE_REVISION = "52001dd2738e1509253b5264012ef907f940e938"
+private val ANDROID_NDK_VERSION = "27.0.12077973"
+private val rustAndroidAbis = listOf("arm64-v8a", "x86_64")
+
+val astrumCoreDir: Provider<Directory> = providers.gradleProperty("astrumCoreDir")
+    .map { project.layout.projectDirectory.dir(it) }
+val androidNdkDirectory: Provider<Directory> = providers.environmentVariable("ANDROID_NDK_ROOT")
+    .orElse(
+        providers.environmentVariable("ANDROID_HOME")
+            .map { "$it/ndk/$ANDROID_NDK_VERSION" },
+    )
+    .map { project.layout.projectDirectory.dir(it) }
+val cargoJniLibs = layout.buildDirectory.dir("generated/cargo/jniLibs")
 
 android {
     namespace = "br.app.astrum.ts6.app"
@@ -17,6 +36,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+
+        ndk {
+            abiFilters += rustAndroidAbis
+        }
     }
 
     signingConfigs {
@@ -70,6 +93,12 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir(cargoJniLibs)
+        }
+    }
+
     packaging {
         resources.excludes += setOf(
             "META-INF/DEPENDENCIES",
@@ -105,4 +134,34 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation("org.json:json:20240303")
+}
+
+val buildAstrumCore = tasks.register<BuildAstrumCoreTask>("buildAstrumCore") {
+    rustDirectory.set(astrumCoreDir)
+    rustDirectoryPath.set(providers.gradleProperty("astrumCoreDir").orElse(""))
+    rustInputs.from(
+        astrumCoreDir.map { directory ->
+            project.fileTree(directory.asFile) {
+                exclude(".git/**", "target/**", "build/**")
+            }
+        },
+    )
+    ndkDirectory.set(androidNdkDirectory)
+    expectedRevision.set(ASTRUM_CORE_REVISION)
+    ndkVersion.set(ANDROID_NDK_VERSION)
+    outputDirectory.set(cargoJniLibs)
+}
+
+tasks.configureEach {
+    if (name == "assemble" || name.startsWith("assemble") ||
+        name == "package" || name.startsWith("package")
+    ) {
+        dependsOn(buildAstrumCore)
+    }
+}
+
+tasks.register<InspectAstrumCoreApkTask>("inspectAstrumCoreApk") {
+    dependsOn(buildAstrumCore, "assembleDebug")
+    apkFile.set(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+    generatedLibraries.set(cargoJniLibs)
 }
