@@ -16,6 +16,7 @@ object AstrumCoreUniFfiMobileSession {
                 host = config.host,
                 port = config.port.toUShort(),
                 nickname = config.nickname,
+                identity = null,
             ),
         )
 
@@ -35,6 +36,10 @@ object AstrumCoreUniFfiMobileSession {
         }
 
         override suspend fun nextEvent(timeoutMs: Long): String? = session.nextEvent(timeoutMs.toULong())
+
+        override suspend fun sendVoiceFrame(codec: Int, data: ByteArray) {
+            session.sendVoiceFrame(codec.toUByte(), data)
+        }
 
         override suspend fun close(reason: String): AstrumCoreMobileSession.CloseResult = when (session.close(reason)) {
             MobileCloseResult.CLOSED -> AstrumCoreMobileSession.CloseResult.CLOSED

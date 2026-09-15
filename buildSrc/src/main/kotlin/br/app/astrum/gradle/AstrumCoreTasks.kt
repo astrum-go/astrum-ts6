@@ -25,7 +25,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 
-private const val ASTRUM_CORE_REVISION = "7f53aee5db25b17c04d9f2238ab7a75380b11ecb"
+private const val ASTRUM_CORE_REVISION = "abfd54d6a7c942b1bbbca3ca523fafc6b4b58604"
 private const val ANDROID_NDK_VERSION = "27.0.12077973"
 private const val ASTRUM_CORE_LIBRARY = "libastrum_core.so"
 private const val UNIFFI_BINDGEN_VERSION = "0.32.1"

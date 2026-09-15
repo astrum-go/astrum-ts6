@@ -116,7 +116,7 @@ request and push to `main`.
 ### Optional Rust core APK integration
 
 The app does not activate `AstrumCoreSessionClient` by default. When a clean
-`astrum-core` checkout at revision `7f53aee` is available, Cargo can build the
+`astrum-core` checkout at revision `abfd54d` is available, Cargo can build the
 two packaged ABIs and the opt-in UniFFI Kotlin bindings without committing
 native binaries or generated sources:
 
@@ -141,7 +141,10 @@ checkout has a different `HEAD` or any tracked/untracked changes; in
 particular, a dirty checkout must not be used for this build. The inspection
 task verifies that the debug APK contains only the expected `astrum_core`
 library entries for `arm64-v8a` and `x86_64`, and compares their SHA-256 hashes
-with the generated outputs.
+with the generated outputs. The opt-in `AstrumCoreMobileSession.sendVoiceFrame`
+API accepts Opus Voice codec `4` or Opus Music codec `5` and forwards the
+non-empty payload unchanged; the default production path continues to use the
+existing `AstrumCoreSessionClient` JNI integration.
 
 ## Contributing and security
 

@@ -49,7 +49,7 @@ val generateAstrumCoreKotlin = tasks.register<GenerateAstrumCoreKotlinTask>("gen
         coreDirectory.set(project(":app").layout.projectDirectory.dir(coreDir))
     }
     libraryDirectory.set(project(":app").layout.buildDirectory.dir("generated/cargo/jniLibs"))
-    expectedRevision.set("7f53aee5db25b17c04d9f2238ab7a75380b11ecb")
+    expectedRevision.set("abfd54d6a7c942b1bbbca3ca523fafc6b4b58604")
     bindgenVersion.set("0.32.1")
     outputDirectory.set(astrumCoreKotlinOutput)
 }

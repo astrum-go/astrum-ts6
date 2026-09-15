@@ -4,9 +4,9 @@ package br.app.astrum.ts6.protocol
  * Small protocol-facing facade for the opt-in UniFFI MobileSession.
  *
  * The facade intentionally contains only the API currently exported by
- * astrum-core: configuration, lifecycle state, connect, event polling, and
- * close. Voice, channel, and stream operations remain on the existing JNI
- * boundary until the Rust mobile API exposes them.
+ * astrum-core: configuration, lifecycle state, connect, event polling, close,
+ * and opt-in voice-frame sending. Channel and stream operations remain on the
+ * existing JNI boundary.
  */
 class AstrumCoreMobileSession internal constructor(
     private val delegate: Delegate,
@@ -34,6 +34,7 @@ class AstrumCoreMobileSession internal constructor(
         fun state(): State
         suspend fun connect()
         suspend fun nextEvent(timeoutMs: Long): String?
+        suspend fun sendVoiceFrame(codec: Int, data: ByteArray)
         suspend fun close(reason: String): CloseResult
     }
 
@@ -46,6 +47,16 @@ class AstrumCoreMobileSession internal constructor(
     suspend fun nextEvent(timeoutMs: Long): String? {
         require(timeoutMs >= 0) { "timeoutMs must not be negative" }
         return delegate.nextEvent(timeoutMs)
+    }
+
+    /** Sends one Opus voice frame through the opt-in Astrum Core session. */
+    suspend fun sendVoiceFrame(codec: Int, data: ByteArray) {
+        require(codec == 4 || codec == 5) {
+            "codec must be Opus Voice (4) or Opus Music (5)"
+        }
+        require(data.isNotEmpty()) { "voice frame data must not be empty" }
+        check(state() == State.CONNECTED) { "session must be CONNECTED to send voice" }
+        delegate.sendVoiceFrame(codec, data)
     }
 
     suspend fun close(reason: String): CloseResult = delegate.close(reason)
