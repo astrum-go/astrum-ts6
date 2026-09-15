@@ -16,3 +16,7 @@ captures/
 .DS_Store
 .slim/deepwork/
 .tmp/
+
+# Opt-in Astrum Core native and UniFFI generation outputs.
+app/build/generated/cargo/
+ts6-protocol/build/generated/astrumCore/

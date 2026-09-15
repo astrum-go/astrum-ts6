@@ -10,7 +10,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-private val ASTRUM_CORE_REVISION = "52001dd2738e1509253b5264012ef907f940e938"
+private val ASTRUM_CORE_REVISION = "7f53aee5db25b17c04d9f2238ab7a75380b11ecb"
 private val ANDROID_NDK_VERSION = "27.0.12077973"
 private val rustAndroidAbis = listOf("arm64-v8a", "x86_64")
 

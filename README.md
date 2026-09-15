@@ -116,12 +116,15 @@ request and push to `main`.
 ### Optional Rust core APK integration
 
 The app does not activate `AstrumCoreSessionClient` by default. When a clean
-`astrum-core` checkout at revision
-`52001dd2738e1509253b5264012ef907f940e938` is available, Cargo can build the
-two packaged ABIs without committing native binaries:
+`astrum-core` checkout at revision `7f53aee` is available, Cargo can build the
+two packaged ABIs and the opt-in UniFFI Kotlin bindings without committing
+native binaries or generated sources:
 
 ```bash
 ./gradlew :app:assembleDebug \
+  -PastrumCoreDir=/path/to/clean/astrum-core \
+  -PastrumCoreRuntime=true
+./gradlew :ts6-protocol:generateAstrumCoreKotlin \
   -PastrumCoreDir=/path/to/clean/astrum-core \
   -PastrumCoreRuntime=true
 ./gradlew :app:inspectAstrumCoreApk \
@@ -131,7 +134,9 @@ two packaged ABIs without committing native binaries:
 
 The task uses `ANDROID_NDK_ROOT`, or
 `ANDROID_HOME/ndk/27.0.12077973` as a fallback, and writes generated libraries
-under `app/build/generated/cargo/jniLibs/`. It refuses to run if the supplied
+under `app/build/generated/cargo/jniLibs/`. The UniFFI task uses the
+`uniffi-bindgen` 0.32.1 executable and writes Kotlin under
+`ts6-protocol/build/generated/astrumCore/kotlin/`. It refuses to run if the supplied
 checkout has a different `HEAD` or any tracked/untracked changes; in
 particular, a dirty checkout must not be used for this build. The inspection
 task verifies that the debug APK contains only the expected `astrum_core`
