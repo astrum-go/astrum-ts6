@@ -1,5 +1,11 @@
 package br.app.astrum.ts6.protocol
 
+import org.json.JSONObject
+
+private const val JNI_RECEIVER_CLOSED_TYPE = "__astrum_jni_receiver_closed__"
+private const val JNI_SESSION_CLOSED_TYPE = "__astrum_jni_session_closed__"
+private const val JNI_SERIALIZATION_ERROR_TYPE = "__astrum_jni_serialization_error__"
+
 /** Result of one bounded wait on the native event queue. */
 sealed interface NativePollResult {
     data class Event(val json: String) : NativePollResult
@@ -60,14 +66,31 @@ interface AstrumCoreBindings {
     fun disconnectWithReason(sessionId: Long, reason: String): Int = -1
 }
 
+/** Converts the JSON protocol used by the JNI poll boundary into its typed result. */
+internal fun mapNativePollResult(json: String?): NativePollResult {
+    if (json == null) return NativePollResult.Timeout
+
+    val type = runCatching { JSONObject(json).optString("type") }.getOrNull()
+    return when (type) {
+        JNI_RECEIVER_CLOSED_TYPE,
+        JNI_SESSION_CLOSED_TYPE,
+        -> NativePollResult.Closed
+
+        JNI_SERIALIZATION_ERROR_TYPE -> NativePollResult.Error(
+            IllegalStateException("Native event serialization failed (JNI sentinel received)"),
+        )
+
+        else -> NativePollResult.Event(json)
+    }
+}
+
 /** Production adapter. Loading the native object remains lazy until this is used. */
 internal object JniAstrumCoreBindings : AstrumCoreBindings {
     override fun connectWithIdentity(host: String, port: Int, nickname: String, identityMaterial: String): Long =
         AstrumCoreNative.connectWithIdentity(host, port, nickname, identityMaterial)
 
     override fun pollEvent(sessionId: Long, timeoutMs: Long): NativePollResult = try {
-        AstrumCoreNative.pollEvent(sessionId, timeoutMs)?.let(NativePollResult::Event)
-            ?: NativePollResult.Timeout
+        mapNativePollResult(AstrumCoreNative.pollEvent(sessionId, timeoutMs))
     } catch (error: Throwable) {
         NativePollResult.Error(error)
     }
