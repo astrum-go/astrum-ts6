@@ -45,6 +45,9 @@ if (astrumCoreRuntime) {
 val generateAstrumCoreKotlin = tasks.register<GenerateAstrumCoreKotlinTask>("generateAstrumCoreKotlin") {
     enabled = astrumCoreRuntime
     dependsOn(":app:buildAstrumCore")
+    providers.gradleProperty("astrumCoreDir").orNull?.let { coreDir ->
+        coreDirectory.set(project(":app").layout.projectDirectory.dir(coreDir))
+    }
     libraryDirectory.set(project(":app").layout.buildDirectory.dir("generated/cargo/jniLibs"))
     expectedRevision.set("7f53aee5db25b17c04d9f2238ab7a75380b11ecb")
     bindgenVersion.set("0.32.1")

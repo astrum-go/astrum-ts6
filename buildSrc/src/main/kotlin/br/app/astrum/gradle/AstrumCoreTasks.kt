@@ -190,6 +190,10 @@ abstract class GenerateAstrumCoreKotlinTask @Inject constructor(
 ) : DefaultTask() {
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val coreDirectory: DirectoryProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val libraryDirectory: DirectoryProperty
 
     @get:Input
@@ -238,6 +242,7 @@ abstract class GenerateAstrumCoreKotlinTask @Inject constructor(
         // both packaged cdylibs expose the same component contract.
         val sourceLibrary = libraries.first { it.first.abi == "arm64-v8a" }.second
         execOperations.exec {
+            workingDir(coreDirectory)
             commandLine(
                 "uniffi-bindgen",
                 "generate",
