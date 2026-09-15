@@ -10,7 +10,8 @@ private const val JNI_SERIALIZATION_ERROR_TYPE = "__astrum_jni_serialization_err
 sealed interface NativePollResult {
     data class Event(val json: String) : NativePollResult
     data object Timeout : NativePollResult
-    data object Closed : NativePollResult
+    data object ReceiverClosed : NativePollResult
+    data object SessionClosed : NativePollResult
     data class Error(val cause: Throwable) : NativePollResult
 }
 
@@ -33,7 +34,7 @@ interface AstrumCoreBindings {
         error("connectWithIdentity is not implemented")
 
     fun pollEvent(sessionId: Long, timeoutMs: Long): NativePollResult =
-        NativePollResult.Closed
+        NativePollResult.SessionClosed
 
     fun sendVoice(sessionId: Long, codec: Int, data: ByteArray): Boolean = false
 
@@ -70,11 +71,19 @@ interface AstrumCoreBindings {
 internal fun mapNativePollResult(json: String?): NativePollResult {
     if (json == null) return NativePollResult.Timeout
 
-    val type = runCatching { JSONObject(json).optString("type") }.getOrNull()
+    if (json.isBlank()) {
+        return NativePollResult.Error(IllegalArgumentException("Native event payload is blank"))
+    }
+
+    val type = try {
+        JSONObject(json).optString("type")
+    } catch (error: Throwable) {
+        return NativePollResult.Error(IllegalArgumentException("Invalid native event JSON", error))
+    }
+
     return when (type) {
-        JNI_RECEIVER_CLOSED_TYPE,
-        JNI_SESSION_CLOSED_TYPE,
-        -> NativePollResult.Closed
+        JNI_RECEIVER_CLOSED_TYPE -> NativePollResult.ReceiverClosed
+        JNI_SESSION_CLOSED_TYPE -> NativePollResult.SessionClosed
 
         JNI_SERIALIZATION_ERROR_TYPE -> NativePollResult.Error(
             IllegalStateException("Native event serialization failed (JNI sentinel received)"),

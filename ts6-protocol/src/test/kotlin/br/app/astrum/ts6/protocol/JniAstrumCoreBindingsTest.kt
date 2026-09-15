@@ -11,15 +11,31 @@ class JniAstrumCoreBindingsTest {
     }
 
     @Test
-    fun closedPollSentinelsAreClosed() {
+    fun closedPollSentinelsRemainDistinct() {
         assertEquals(
-            NativePollResult.Closed,
+            NativePollResult.ReceiverClosed,
             mapNativePollResult("{\"type\":\"__astrum_jni_receiver_closed__\"}"),
         )
         assertEquals(
-            NativePollResult.Closed,
+            NativePollResult.SessionClosed,
             mapNativePollResult("{\"type\":\"__astrum_jni_session_closed__\"}"),
         )
+    }
+
+    @Test
+    fun blankPollResponseIsError() {
+        val result = mapNativePollResult(" \t\n")
+
+        assertTrue(result is NativePollResult.Error)
+        assertTrue((result as NativePollResult.Error).cause.message?.contains("blank") == true)
+    }
+
+    @Test
+    fun malformedPollResponseIsError() {
+        val result = mapNativePollResult("{\"type\":\"Ready\"")
+
+        assertTrue(result is NativePollResult.Error)
+        assertTrue((result as NativePollResult.Error).cause.message?.contains("JSON") == true)
     }
 
     @Test

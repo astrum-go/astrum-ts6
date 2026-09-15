@@ -32,16 +32,36 @@ class AstrumCoreSessionClientTest {
     }
 
     @Test
-    fun pollClosedIsDisconnectedAndPollErrorIsError() {
+    fun nativeTerminalPollResultsAreNotConfirmedDisconnects() {
+        for ((terminal, expectedDetail) in listOf(
+            NativePollResult.ReceiverClosed to "receiver closed",
+            NativePollResult.SessionClosed to "session is missing",
+        )) {
+            val native = FakeBindings()
+            val listener = RecordingListener()
+            val client = AstrumCoreSessionClient(native)
+            val connect = connectInThread(client, native, listener)
+            native.emit(event("Connected", "{\"own_client_id\":7}"))
+            native.emit(terminal)
+
+            connect.join(1000)
+            assertFalse(connect.isAlive)
+            val status = listener.statuses.last { it.phase == ConnectionPhase.ERROR }
+            assertTrue(status.detail?.contains(expectedDetail) == true)
+            assertEquals(DisconnectResult.Failure, status.disconnectResult)
+            assertTrue(status.disconnectResult != DisconnectResult.Confirmed)
+            client.close()
+        }
+
         val closedNative = FakeBindings()
         val closedListener = RecordingListener()
         val closedClient = AstrumCoreSessionClient(closedNative)
         val closedConnect = connectInThread(closedClient, closedNative, closedListener)
         closedNative.emit(event("Connected", "{\"own_client_id\":7}"))
-        closedNative.emit(NativePollResult.Closed)
+        closedNative.emit(NativePollResult.ReceiverClosed)
         closedConnect.join(1000)
         assertFalse(closedConnect.isAlive)
-        assertTrue(closedListener.statuses.any { it.phase == ConnectionPhase.DISCONNECTED })
+        assertTrue(closedListener.statuses.any { it.phase == ConnectionPhase.ERROR })
         closedClient.close()
 
         val errorNative = FakeBindings()

@@ -1,6 +1,7 @@
 package br.app.astrum.ts6.protocol
 
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
@@ -248,20 +249,39 @@ class AstrumCoreSessionClient(
                             }
                         }
 
-                        is NativePollResult.Event -> if (poll.json.isNotBlank()) {
-                            try {
-                                handleJsonEvent(poll.json, connectedLatch, connectedEvent, readyEvent, generation, terminalFailure)
-                            } catch (e: Throwable) {
-                                System.err.println("AstrumCoreSessionClient: erro ao processar evento JSON: ${e.message}")
-                            }
+                        is NativePollResult.Event -> try {
+                            handleJsonEvent(poll.json, connectedLatch, connectedEvent, readyEvent, generation, terminalFailure)
+                        } catch (e: JSONException) {
+                            val failure = IOException("AstrumCore event JSON is invalid", e)
+                            terminalFailure.compareAndSet(null, failure)
+                            terminateFromNative(generation, ConnectionStatus(
+                                ConnectionPhase.ERROR,
+                                failure.message,
+                                retryable = true,
+                            ), connectedLatch)
+                            break
                         }
 
-                        NativePollResult.Closed -> {
-                            terminalFailure.compareAndSet(null, IOException("AstrumCore event polling closed"))
+                        NativePollResult.ReceiverClosed -> {
+                            val failure = IOException("AstrumCore event receiver closed")
+                            terminalFailure.compareAndSet(null, failure)
                             terminateFromNative(generation, ConnectionStatus(
-                                ConnectionPhase.DISCONNECTED,
-                                "AstrumCore event polling closed",
-                                disconnectResult = DisconnectResult.Confirmed,
+                                ConnectionPhase.ERROR,
+                                failure.message,
+                                retryable = true,
+                                disconnectResult = DisconnectResult.Failure,
+                            ), connectedLatch)
+                            break
+                        }
+
+                        NativePollResult.SessionClosed -> {
+                            val failure = IOException("AstrumCore session is missing")
+                            terminalFailure.compareAndSet(null, failure)
+                            terminateFromNative(generation, ConnectionStatus(
+                                ConnectionPhase.ERROR,
+                                failure.message,
+                                retryable = true,
+                                disconnectResult = DisconnectResult.Failure,
                             ), connectedLatch)
                             break
                         }
