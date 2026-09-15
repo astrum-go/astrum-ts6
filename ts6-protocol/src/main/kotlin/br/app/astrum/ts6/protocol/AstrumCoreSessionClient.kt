@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 private fun JSONObject.firstNonBlankString(vararg keys: String): String? {
     for (key in keys) {
@@ -108,16 +109,21 @@ private fun awaitUninterruptibly(latch: CountDownLatch) {
     if (interrupted) Thread.currentThread().interrupt()
 }
 
-class AstrumCoreSessionClient : Ts3SessionClient {
+class AstrumCoreSessionClient(
+    private val bindings: AstrumCoreBindings = JniAstrumCoreBindings,
+) : Ts3SessionClient {
     private companion object {
         const val STREAM_START_TIMEOUT_MS = 3000L
         const val STREAM_INFO_DISCOVERY_DELAY_MS = 300L
+        const val POLL_TIMEOUT_MS = 50L
+        const val POLL_TIMEOUT_BACKOFF_MS = 1L
     }
 
     @Volatile
     private var sessionId: Long = 0L
     private val snapshotStore = SessionSnapshotStore()
     private val running = AtomicBoolean(false)
+    private val sessionReady = AtomicBoolean(false)
     private val connectionGeneration = AtomicLong(0L)
     private val terminalGeneration = AtomicLong(Long.MIN_VALUE)
     private val pendingStreamStarts = ConcurrentLinkedQueue<PendingStreamStart>()
@@ -175,17 +181,20 @@ class AstrumCoreSessionClient : Ts3SessionClient {
         }
         val connectedLatch = CountDownLatch(1)
         val connectedEvent = AtomicBoolean(false)
+        val readyEvent = AtomicBoolean(false)
+        val terminalFailure = AtomicReference<Throwable?>(null)
         val attemptCompletion = CountDownLatch(1)
         synchronized(lifecycleLock) {
             connectionCompletion = attemptCompletion
             connectionThread = Thread.currentThread()
             connectedLatchForAttempt = connectedLatch
         }
+        sessionReady.set(false)
         statusListener.onStatusChanged(ConnectionStatus(ConnectionPhase.CONNECTING))
 
         try {
             System.err.println("ASTRUM_KOTLIN: Chamando AstrumCoreNative.connectWithIdentity(${normalized.host}, ${normalized.port}, ${normalized.nickname})...")
-            val sid = AstrumCoreNative.connectWithIdentity(
+            val sid = bindings.connectWithIdentity(
                 normalized.host,
                 normalized.port,
                 normalized.nickname,
@@ -214,7 +223,7 @@ class AstrumCoreSessionClient : Ts3SessionClient {
                 }
             }
             if (!accepted) {
-                runCatching { AstrumCoreNative.disconnectWithReason(sid, "Stale connection") }
+                runCatching { bindings.disconnectWithReason(sid, "Stale connection") }
                 return
             }
             System.err.println("ASTRUM_KOTLIN: Iniciando threads de evento e envio de voz para session=$sid...")
@@ -222,34 +231,51 @@ class AstrumCoreSessionClient : Ts3SessionClient {
             // Loop de eventos recebidos do Rust via JNI
             val events = Thread({
                 while (running.get() && connectionGeneration.get() == generation) {
-                    var pollFailure: Throwable? = null
-                    val json = try {
-                        AstrumCoreNative.pollEvent(sid, 50)
-                    } catch (e: Throwable) {
-                        pollFailure = e
-                        null
-                    }
-
                     if (!running.get()) break
-                    if (pollFailure != null) {
-                        val failure = IOException("AstrumCore pollEvent failed", pollFailure)
-                        System.err.println("AstrumCoreSessionClient: ${failure.message}")
-                        listenerForGeneration(generation)?.onStatusChanged(
-                            ConnectionStatus(ConnectionPhase.ERROR, failure.message, retryable = true),
-                        )
-                        connectedLatch.countDown()
-                        disconnect("Native event polling failed")
-                        break
-                    }
+                    when (val poll = try {
+                        bindings.pollEvent(sid, POLL_TIMEOUT_MS)
+                    } catch (error: Throwable) {
+                        NativePollResult.Error(error)
+                    }) {
+                        NativePollResult.Timeout -> {
+                            // A test double (and a misbehaving native implementation) may
+                            // return immediately. Keep timeout distinct from close/error and
+                            // prevent that from becoming a CPU-burning busy spin.
+                            try {
+                                Thread.sleep(POLL_TIMEOUT_BACKOFF_MS)
+                            } catch (_: InterruptedException) {
+                                break
+                            }
+                        }
 
-                    if (json.isNullOrBlank()) {
-                        continue
-                    }
+                        is NativePollResult.Event -> if (poll.json.isNotBlank()) {
+                            try {
+                                handleJsonEvent(poll.json, connectedLatch, connectedEvent, readyEvent, generation, terminalFailure)
+                            } catch (e: Throwable) {
+                                System.err.println("AstrumCoreSessionClient: erro ao processar evento JSON: ${e.message}")
+                            }
+                        }
 
-                    try {
-                        handleJsonEvent(json, connectedLatch, connectedEvent, generation)
-                    } catch (e: Throwable) {
-                        System.err.println("AstrumCoreSessionClient: erro ao processar evento JSON: ${e.message}")
+                        NativePollResult.Closed -> {
+                            terminalFailure.compareAndSet(null, IOException("AstrumCore event polling closed"))
+                            terminateFromNative(generation, ConnectionStatus(
+                                ConnectionPhase.DISCONNECTED,
+                                "AstrumCore event polling closed",
+                                disconnectResult = DisconnectResult.Confirmed,
+                            ), connectedLatch)
+                            break
+                        }
+
+                        is NativePollResult.Error -> {
+                            val failure = IOException("AstrumCore pollEvent failed", poll.cause)
+                            terminalFailure.compareAndSet(null, failure)
+                            terminateFromNative(generation, ConnectionStatus(
+                                ConnectionPhase.ERROR,
+                                failure.message,
+                                retryable = true,
+                            ), connectedLatch)
+                            break
+                        }
                     }
                 }
             }, "astrum-events").apply {
@@ -262,10 +288,19 @@ class AstrumCoreSessionClient : Ts3SessionClient {
             val voiceTx = Thread({
                 while (running.get() && connectionGeneration.get() == generation) {
                     val source = voiceSource
-                    if (source != null && source.isReady()) {
+                    if (sessionReady.get() && source != null && source.isReady()) {
                         val frame = source.pollEncodedFrame()
                         if (frame != null && frame.isNotEmpty()) {
-                            AstrumCoreNative.sendVoice(sid, 4 /* OPUS_VOICE */, frame)
+                            val sent = try {
+                                bindings.sendVoice(sid, 4 /* OPUS_VOICE */, frame)
+                            } catch (error: Throwable) {
+                                failNativeVoice(generation, IOException("AstrumCore sendVoice failed", error))
+                                break
+                            }
+                            if (!sent) {
+                                failNativeVoice(generation, IOException("AstrumCore sendVoice returned false"))
+                                break
+                            }
                             try {
                                 Thread.sleep(15)
                             } catch (ie: InterruptedException) {
@@ -286,16 +321,16 @@ class AstrumCoreSessionClient : Ts3SessionClient {
             }
             voiceThread = voiceTx
 
-            // CONNECTED is emitted only by handleJsonEvent after the native event arrives.
+            // Public CONNECTED is emitted only after handleJsonEvent receives Ready.
             val connected = try {
                 connectedLatch.await(3000, TimeUnit.MILLISECONDS)
             } catch (ignored: InterruptedException) {
                 Thread.currentThread().interrupt()
                 false
             }
-            if (!connected || !connectedEvent.get() || !isGenerationCurrent(generation)) {
-                val failure = IOException("Tempo limite aguardando confirmação nativa de conexão")
-                if (isAttemptGenerationCurrent(generation)) listener.onStatusChanged(
+            if (!connected || !connectedEvent.get() || !sessionReady.get() || !isGenerationCurrent(generation)) {
+                val failure = terminalFailure.get() ?: IOException("Tempo limite aguardando evento Ready nativo")
+                if (terminalFailure.get() == null && isAttemptGenerationCurrent(generation)) listener.onStatusChanged(
                     ConnectionStatus(ConnectionPhase.ERROR, failure.message, retryable = true),
                 )
                 if (isGenerationCurrent(generation) || sessionId != 0L || running.get()) {
@@ -317,7 +352,9 @@ class AstrumCoreSessionClient : Ts3SessionClient {
         json: String,
         connectedLatch: CountDownLatch,
         connectedEvent: AtomicBoolean,
+        readyEvent: AtomicBoolean,
         generation: Long,
+        terminalFailure: AtomicReference<Throwable?>,
     ) {
         if (!isGenerationCurrent(generation)) return
             val obj = JSONObject(json)
@@ -328,16 +365,22 @@ class AstrumCoreSessionClient : Ts3SessionClient {
             "Connected" -> {
                 val data = obj.getJSONObject("data")
                 val id = data.getInt("own_client_id")
-                val connectedListener = synchronized(lifecycleLock) {
+                synchronized(lifecycleLock) {
                     if (!isGenerationCurrentLocked(generation)) return
                     ownClientId = id
                     connectedEvent.set(true)
-                    listener
                 }
-                connectedListener?.onStatusChanged(ConnectionStatus(ConnectionPhase.CONNECTED))
+                // Connected only identifies the native transport. It is not public
+                // connectivity: the server snapshot is usable only after Ready.
+            }
+
+            "Ready" -> {
+                if (!connectedEvent.get() || !readyEvent.compareAndSet(false, true)) return
+                sessionReady.set(true)
+                connectedLatch.countDown()
+                listenerForGeneration(generation)?.onStatusChanged(ConnectionStatus(ConnectionPhase.CONNECTED))
                 publishSnapshot(generation)
                 scheduleStreamInfoDiscovery(generation)
-                connectedLatch.countDown()
             }
 
             "ChannelListReceived" -> {
@@ -460,6 +503,7 @@ class AstrumCoreSessionClient : Ts3SessionClient {
                 val dataArr = vObj.getJSONArray("data")
                 val bytes = ByteArray(dataArr.length()) { i -> dataArr.getInt(i).toByte() }
                 val codec = if (codecInt == 5) VoiceCodec.OPUS_MUSIC else VoiceCodec.OPUS_VOICE
+                if (!sessionReady.get()) return
                 listenerForGeneration(generation)?.onVoiceFrame(
                     VoiceFrame(
                         clientId = clid,
@@ -525,6 +569,7 @@ class AstrumCoreSessionClient : Ts3SessionClient {
                 val terminalListener = synchronized(lifecycleLock) {
                     if (!isGenerationCurrentLocked(generation)) return
                     running.set(false)
+                    sessionReady.set(false)
                     sessionId = 0L
                     ownClientId = null
                     snapshotStore.clear()
@@ -533,14 +578,51 @@ class AstrumCoreSessionClient : Ts3SessionClient {
                 }
                 failPendingStreamStarts(IllegalStateException(reason))
                 connectedLatch.countDown()
-                emitTerminalOnce(generation, reason, terminalListener)
+                terminalFailure.compareAndSet(null, IOException(reason))
+                emitTerminalOnce(
+                    generation,
+                    reason,
+                    terminalListener,
+                    ConnectionStatus(
+                        ConnectionPhase.DISCONNECTED,
+                        reason,
+                        disconnectResult = DisconnectResult.Confirmed,
+                    ),
+                )
             }
             }
+    }
+
+    private fun terminateFromNative(
+        generation: Long,
+        terminalStatus: ConnectionStatus,
+        connectedLatch: CountDownLatch,
+    ) {
+        val terminalListener = synchronized(lifecycleLock) {
+            if (!isGenerationCurrentLocked(generation)) return
+            running.set(false)
+            sessionReady.set(false)
+            sessionId = 0L
+            ownClientId = null
+            snapshotStore.clear()
+            streamInfoDiscovery.clear()
+            listener
+        }
+        connectedLatch.countDown()
+        failPendingStreamStarts(IllegalStateException(terminalStatus.detail ?: "Native session ended"))
+        emitTerminalOnce(generation, terminalStatus.detail ?: "Native session ended", terminalListener, terminalStatus)
+    }
+
+    private fun failNativeVoice(generation: Long, failure: IOException) {
+        val status = ConnectionStatus(ConnectionPhase.ERROR, failure.message, retryable = true)
+        listenerForGeneration(generation)?.onStatusChanged(status)
+        disconnectInternal("Native voice transmission failed", status)
     }
 
     private fun publishSnapshot(generation: Long? = null) {
         val (callback, snap) = synchronized(lifecycleLock) {
             if (generation != null && !isGenerationCurrentLocked(generation)) return
+            if (!sessionReady.get()) return
             val snapshot = snapshotStore.snapshot().copy(ownClientId = ownClientId)
             listener to snapshot
         }
@@ -554,7 +636,7 @@ class AstrumCoreSessionClient : Ts3SessionClient {
         val targets = participant?.let(::listOf)
             ?: snapshotStore.snapshot().participants
         val ownId = ownClientId
-        if (ownId == null) return
+        if (ownId == null || !sessionReady.get()) return
         for (target in targets) {
             if (target.id == ownId) continue
             val clientId = target.id
@@ -565,9 +647,9 @@ class AstrumCoreSessionClient : Ts3SessionClient {
                 val current = snapshotStore.participant(clientId)
                 if (current == null || current.channelId != channelId || current.id == ownClientId) return@schedule
                 val sid = sessionId
-                if (sid == 0L) return@schedule
+                if (sid == 0L || !sessionReady.get()) return@schedule
                 runCatching {
-                    AstrumCoreNative.requestStreamInfo(sid, clientId)
+                    bindings.requestStreamInfo(sid, clientId)
                 }.onFailure { error ->
                     System.err.println(
                         "AstrumCoreSessionClient: discovery falhou para client $clientId: ${error.message}",
@@ -583,8 +665,8 @@ class AstrumCoreSessionClient : Ts3SessionClient {
 
     override fun joinChannel(channelId: Int, password: String) {
         val sid = sessionId
-        if (sid != 0L) {
-            val joined = AstrumCoreNative.joinChannel(sid, channelId.toLong(), password)
+        if (sid != 0L && sessionReady.get()) {
+            val joined = bindings.joinChannel(sid, channelId.toLong(), password)
             check(joined) {
                 "AstrumCoreNative.joinChannel failed for channel $channelId"
             }
@@ -593,6 +675,10 @@ class AstrumCoreSessionClient : Ts3SessionClient {
     }
 
     override fun disconnect(reason: String) {
+        disconnectInternal(reason, null)
+    }
+
+    private fun disconnectInternal(reason: String, terminalStatusOverride: ConnectionStatus?) {
         val shutdown = synchronized(lifecycleLock) {
             shutdownCompletion?.let {
                 if (Thread.currentThread() === shutdownOwnerThread) return@synchronized null to null
@@ -606,6 +692,7 @@ class AstrumCoreSessionClient : Ts3SessionClient {
 
             val nextGeneration = connectionGeneration.incrementAndGet()
             running.set(false)
+            sessionReady.set(false)
             // Invalidate these before invoking native code so no new operation can use this session.
             sessionId = 0L
             connectedLatchForAttempt?.countDown()
@@ -639,12 +726,13 @@ class AstrumCoreSessionClient : Ts3SessionClient {
             )
         }
 
+        var disconnectResult: DisconnectResult? = null
         try {
             // A connect in progress owns the session ID until connectWithIdentity returns.
             // Waiting here makes close() a real lifecycle barrier instead of a fire-and-forget.
-            if (shutdown.sessionId != 0L) {
+            disconnectResult = if (shutdown.sessionId != 0L) {
                 val result = runCatching {
-                    AstrumCoreNative.disconnectWithReason(shutdown.sessionId, reason)
+                    bindings.disconnectWithReason(shutdown.sessionId, reason)
                 }.getOrElse { error ->
                     System.err.println("AstrumCoreSessionClient: disconnect JNI falhou: ${error.message}")
                     -1
@@ -654,7 +742,14 @@ class AstrumCoreSessionClient : Ts3SessionClient {
                     0 -> System.err.println("AstrumCoreSessionClient: timeout aguardando disconnect do servidor")
                     else -> System.err.println("AstrumCoreSessionClient: disconnect falhou")
                 }
-            }
+                when (result) {
+                    1 -> DisconnectResult.Confirmed
+                    0 -> DisconnectResult.TimedOut
+                    else -> DisconnectResult.Failure
+                }
+            } else if (shutdown.hadNativeSession) {
+                DisconnectResult.Failure
+            } else null
             if (shutdown.connectThread !== Thread.currentThread()) {
                 shutdown.connectAttempt?.let(::awaitUninterruptibly)
             }
@@ -674,7 +769,25 @@ class AstrumCoreSessionClient : Ts3SessionClient {
             // Publish completion before the terminal callback: callbacks may reconnect/reenter.
             shutdown.completion.countDown()
             if (shutdown.hadNativeSession) {
-                emitTerminalOnce(shutdown.generation, reason, shutdown.listener)
+                val status = terminalStatusOverride?.let { override ->
+                    if (override.disconnectResult == null && disconnectResult != null) {
+                        override.copy(disconnectResult = disconnectResult)
+                    } else {
+                        override
+                    }
+                } ?: disconnectResult?.let { result ->
+                    ConnectionStatus(
+                        phase = if (result == DisconnectResult.Confirmed) {
+                            ConnectionPhase.DISCONNECTED
+                        } else {
+                            ConnectionPhase.ERROR
+                        },
+                        detail = reason,
+                        retryable = result != DisconnectResult.Confirmed,
+                        disconnectResult = result,
+                    )
+                }
+                emitTerminalOnce(shutdown.generation, reason, shutdown.listener, status)
             }
         }
     }
@@ -689,7 +802,7 @@ class AstrumCoreSessionClient : Ts3SessionClient {
     ): String {
         val (sid, pending) = synchronized(lifecycleLock) {
             val currentSessionId = sessionId
-            check(currentSessionId != 0L && running.get()) {
+            check(currentSessionId != 0L && running.get() && sessionReady.get()) {
                 "Cannot start a stream without an active session"
             }
             val request = PendingStreamStart(connectionGeneration.get(), type)
@@ -703,7 +816,7 @@ class AstrumCoreSessionClient : Ts3SessionClient {
             else -> 2
         }
         try {
-            val nativeStreamId = AstrumCoreNative.setupStream(
+            val nativeStreamId = bindings.setupStream(
                 sid,
                 when (type) {
                     StreamType.CAMERA -> "Camera"
@@ -778,8 +891,8 @@ class AstrumCoreSessionClient : Ts3SessionClient {
 
     override fun stopStream(streamId: String) {
         val sid = sessionId
-        if (sid != 0L) {
-            check(AstrumCoreNative.stopStream(sid, streamId)) {
+        if (sid != 0L && sessionReady.get()) {
+            check(bindings.stopStream(sid, streamId)) {
                 "AstrumCoreNative.stopStream failed for stream $streamId"
             }
         }
@@ -787,8 +900,8 @@ class AstrumCoreSessionClient : Ts3SessionClient {
 
     override fun requestJoinStream(targetClientId: Int, streamId: String) {
         val sid = sessionId
-        if (sid != 0L) {
-            check(AstrumCoreNative.requestJoinStream(sid, targetClientId, streamId)) {
+        if (sid != 0L && sessionReady.get()) {
+            check(bindings.requestJoinStream(sid, targetClientId, streamId)) {
                 "AstrumCoreNative.requestJoinStream failed for stream $streamId"
             }
         }
@@ -796,8 +909,8 @@ class AstrumCoreSessionClient : Ts3SessionClient {
 
     override fun leaveStream(targetClientId: Int, streamId: String) {
         val sid = sessionId
-        if (sid != 0L) {
-            check(AstrumCoreNative.leaveStream(sid, targetClientId, streamId)) {
+        if (sid != 0L && sessionReady.get()) {
+            check(bindings.leaveStream(sid, targetClientId, streamId)) {
                 "AstrumCoreNative.leaveStream failed for stream $streamId"
             }
         }
@@ -810,8 +923,8 @@ class AstrumCoreSessionClient : Ts3SessionClient {
         offer: String?,
     ) {
         val sid = sessionId
-        if (sid != 0L) {
-            check(AstrumCoreNative.respondJoinStream(sid, targetClientId, streamId, allow, offer)) {
+        if (sid != 0L && sessionReady.get()) {
+            check(bindings.respondJoinStream(sid, targetClientId, streamId, allow, offer)) {
                 "AstrumCoreNative.respondJoinStream failed for stream $streamId"
             }
         }
@@ -819,8 +932,8 @@ class AstrumCoreSessionClient : Ts3SessionClient {
 
     override fun sendStreamSignaling(targetClientId: Int, streamId: String, payload: String) {
         val sid = sessionId
-        if (sid != 0L) {
-            check(AstrumCoreNative.sendStreamSignaling(sid, targetClientId, streamId, payload)) {
+        if (sid != 0L && sessionReady.get()) {
+            check(bindings.sendStreamSignaling(sid, targetClientId, streamId, payload)) {
                 "AstrumCoreNative.sendStreamSignaling failed for stream $streamId"
             }
         }
@@ -828,8 +941,8 @@ class AstrumCoreSessionClient : Ts3SessionClient {
 
     override fun requestStreamInfo(targetClientId: Int) {
         val sid = sessionId
-        if (sid != 0L) {
-            check(AstrumCoreNative.requestStreamInfo(sid, targetClientId)) {
+        if (sid != 0L && sessionReady.get()) {
+            check(bindings.requestStreamInfo(sid, targetClientId)) {
                 "AstrumCoreNative.requestStreamInfo failed for client $targetClientId"
             }
         }
@@ -866,13 +979,14 @@ class AstrumCoreSessionClient : Ts3SessionClient {
         generation: Long,
         reason: String,
         terminalListener: Ts3SessionListener? = listener,
+        terminalStatus: ConnectionStatus? = null,
     ) {
         val callback = synchronized(lifecycleLock) {
             if (connectionGeneration.get() != generation) return
             if (terminalGeneration.getAndSet(generation) == generation) return
             terminalListener
         }
-        callback?.onStatusChanged(ConnectionStatus(ConnectionPhase.DISCONNECTED, detail = reason))
+        callback?.onStatusChanged(terminalStatus ?: ConnectionStatus(ConnectionPhase.DISCONNECTED, detail = reason))
         callback?.onSnapshotChanged(SessionSnapshot.Empty)
     }
 

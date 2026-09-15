@@ -32,6 +32,7 @@ data class ConnectionStatus(
     val phase: ConnectionPhase = ConnectionPhase.DISCONNECTED,
     val detail: String? = null,
     val retryable: Boolean = false,
+    val disconnectResult: DisconnectResult? = null,
 )
 
 data class Ts3Channel(
